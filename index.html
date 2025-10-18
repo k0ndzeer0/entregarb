@@ -9,8 +9,7 @@
     <script src="https://d3js.org/d3.v7.min.js"></script>
     
     <style>
-        /* [SEU BLOCO DE ESTILOS CSS COMPLETO] */
-        /* ... (ESTILOS COMPLETOS AQUI) ... */
+        /* ESTILOS CSS COMPLETOS */
         * {
             margin: 0;
             padding: 0;
@@ -24,7 +23,574 @@
             display: flex;
             flex-direction: column;
         }
-        /* ... (Restante dos estilos) ... */
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+            flex-grow: 1;
+            margin-bottom: 20px;
+            width: 100%;
+        }
+        .header {
+            background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            position: relative;
+        }
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .logout-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+            padding: 8px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .content {
+            padding: 20px;
+        }
+        .screen {
+            display: none;
+        }
+        .screen.active {
+            display: block;
+        }
+        h2 {
+            color: #3d4b7a;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        h4 {
+            color: #3d4b7a;
+            margin-top: 15px;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            color: #3d4b7a;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #3d4b7a;
+        }
+        .form-group textarea {
+            min-height: 60px;
+            resize: vertical;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        @media (max-width: 400px) {
+            .form-row, .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .btn-primary {
+            width: 100%;
+            background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(61, 75, 122, 0.4);
+        }
+        .btn-voltar {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn-voltar:hover {
+            background: #5a6268;
+        }
+        .role-btn {
+            background: white;
+            border: 3px solid #3d4b7a;
+            color: #3d4b7a;
+            padding: 25px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 15px;
+            cursor: pointer;
+            display: block;
+            width: 100%;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        .role-btn:hover {
+            background: #3d4b7a;
+            color: white;
+        }
+        .entrega-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        .entrega-card:hover {
+            border-color: #3d4b7a;
+            transform: translateX(5px);
+        }
+        .entrega-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .entrega-nome {
+            font-weight: bold;
+            font-size: 18px;
+            color: #3d4b7a;
+        }
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-pendente {
+            background: #ffc107;
+            color: #000;
+        }
+        .status-emrota {
+            background: #17a2b8;
+            color: white;
+        }
+        .status-entregue {
+            background: #28a745;
+            color: white;
+        }
+        .status-cancelada, .status-falha {
+            background: #dc3545;
+            color: white;
+        }
+        .entrega-info {
+            color: #666;
+            font-size: 14px;
+            margin: 5px 0;
+        }
+        .entrega-info strong {
+            color: #333;
+        }
+        .entrega-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-small {
+            flex: 1;
+            min-width: 100px;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            transition: background 0.3s;
+        }
+        .btn-small:hover {
+            opacity: 0.9;
+        }
+        .btn-pegar {
+            background: #3d4b7a;
+            color: white;
+        }
+        .btn-entregar {
+            background: #28a745;
+            color: white;
+        }
+        .btn-falha {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-ver {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-cancelar {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-maps {
+            background: #007bff;
+            color: white;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .stats-grid.full {
+            grid-template-columns: 1fr;
+        }
+        .stat-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #3d4b7a;
+        }
+        .stat-number.green {
+             color: #28a745;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .chart-container {
+             background: #f8f9fa;
+             border: 1px solid #ddd;
+             border-radius: 10px;
+             padding: 15px;
+             margin-bottom: 20px;
+             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .chart-container h3 {
+             color: #3d4b7a;
+             font-size: 18px;
+             margin-bottom: 10px;
+        }
+        #statusChart .bar {
+            fill: #d63031;
+            transition: fill 0.3s;
+        }
+        #statusChart .bar:hover {
+             fill: #3d4b7a;
+        }
+        .axis-label {
+             font-size: 10px;
+             fill: #666;
+        }
+        .geladeira-badge {
+            display: inline-block;
+            background: #17a2b8;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .pago-badge {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .cobrar-badge {
+            display: inline-block;
+            background: #ffc107;
+            color: #000;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .troco-badge {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .detalhes-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+        .detalhes-modal.active {
+            display: flex;
+        }
+        .detalhes-content {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        .btn-fechar {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+        .adm-item {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-left: 5px solid #3d4b7a;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        .adm-item:hover {
+            background: #f0f0f0;
+        }
+        .gestao-card {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        }
+        .gestao-card h3 {
+            color: #d63031;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        .gestao-card p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .gestao-actions-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .btn-add-points {
+            background: #28a745;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-remove-points {
+            background: #ffc107;
+            color: #333;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-reset-senha {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-remover-user {
+            background: #dc3545;
+            color: white;
+        }
+        #loginAtendimento {
+            background: #f0f4f7;
+            padding: 15px;
+            border-radius: 10px;
+        }
+        #loginAtendimento button {
+            margin-top: 20px;
+        }
+        #modalAnexo {
+            background: rgba(0,0,0,0.9);
+            z-index: 1001;
+        }
+        #modalAnexo .detalhes-content {
+            background: #f8f9fa;
+            text-align: center;
+        }
+        #modalAnexo input[type="file"] {
+            border: 2px dashed #3d4b7a;
+            padding: 20px 12px;
+            cursor: pointer;
+        }
+        #modalAnexo textarea {
+            border: 1px solid #ddd;
+            margin-top: 10px;
+        }
+        #modalAnexo button {
+            margin-top: 15px;
+        }
+        .custom-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        .custom-modal.active {
+            display: flex;
+        }
+        .custom-modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            max-width: 350px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 5px 30px rgba(0,0,0,0.4);
+        }
+        .custom-modal-content.wide {
+            max-width: 500px;
+            width: 90%;
+            text-align: left;
+        }
+        .custom-modal-content h4 {
+            color: #3d4b7a;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .custom-modal-content p {
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            flex: 1;
+        }
+        .modal-btn.primary {
+            background: #3d4b7a;
+            color: white;
+        }
+        .modal-btn.secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+        .modal-btn.danger {
+            background: #dc3545;
+            color: white;
+        }
+        .performance-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .performance-table th, .performance-table td {
+            padding: 12px 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .performance-table th {
+            background-color: #f0f4f7;
+            color: #3d4b7a;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        .performance-table tr:hover {
+            background-color: #fafafa;
+        }
+        .performance-metric {
+            font-weight: bold;
+            color: #28a745;
+        }
+        .footer {
+            text-align: center;
+            padding: 15px;
+            color: rgba(255,255,255,0.8);
+            font-size: 12px;
+            margin-top: auto;
+        }
     </style>
 
     <script>
@@ -42,6 +608,8 @@
         window.supabase = null;
         let realtimeChannel = null;
         let todasEntregas = [];
+        let initializationAttempts = 0;
+        const MAX_ATTEMPTS = 10;
         
         let usuarioLogado = null;
         let tipoUsuario = null; 
@@ -55,9 +623,11 @@
         let GESTORES = { 'Cadu': { senha: '1228' }, 'Mari': { senha: '2992' }, 'Junior': { senha: '0701' }, 'Carlos': { senha: '5875' } };
         let ENTREGADORES = { 'Carlos': { senha: '587596', telefone: '66996005936', pontos: 100, historicoPontos: [] }, 'Cadu': { senha: '1228', telefone: '66999999999', pontos: 50, historicoPontos: [] }, 'Jonatan': { senha: '1234', telefone: '66988888888', pontos: 0, historicoPontos: [] } };
         let ATENDENTES = { 'Katia': { senha: '1234' }, 'Maria Eduarda': { senha: '1234' }, 'Andre Lopes': { senha: '1234' }, 'Hugo Aguiar': { senha: '1234' }, 'Cadu': { senha: '1234' }, 'Junior': { senha: '1234' }, 'Marilu': { senha: '1234' } };
+
         
-        
-        // --- FUNÇÕES DE MODAL CUSTOMIZADO (DEFINIÇÕES COMPLETAS) ---
+        // --- DEFINIÇÕES DE FUNÇÕES (DEVE ESTAR ANTES DA CHAMADA) ---
+
+        // Funções de Modal
         const customModal = document.getElementById('customModal');
         const modalTitle = document.getElementById('modalTitle');
         const modalMessage = document.getElementById('modalMessage');
@@ -67,7 +637,8 @@
             modalTitle.textContent = title;
             modalMessage.textContent = message;
             modalButtons.innerHTML = `<button class="modal-btn primary" onclick="customModal.classList.remove('active')">OK</button>`;
-            customModal.classList.add('active');
+            const modal = document.getElementById('customModal');
+            if (modal) modal.classList.add('active');
         }
 
         function showConfirmBox(title, message, onConfirm, onCancel = null) {
@@ -77,19 +648,22 @@
                 <button class="modal-btn secondary" id="confirmCancel">Cancelar</button>
                 <button class="modal-btn primary" id="confirmOk">Sim</button>
             `;
-            customModal.classList.add('active');
+            const modal = document.getElementById('customModal');
+            if (modal) modal.classList.add('active');
 
             document.getElementById('confirmOk').onclick = () => {
-                customModal.classList.remove('active');
+                const modal = document.getElementById('customModal');
+                if (modal) modal.classList.remove('active');
                 if (onConfirm) onConfirm();
             };
             document.getElementById('confirmCancel').onclick = () => {
-                customModal.classList.remove('active');
+                const modal = document.getElementById('customModal');
+                if (modal) modal.classList.remove('active');
                 if (onCancel) onCancel();
             };
         }
-        
-        // --- FUNÇÕES DE UTILIDADE E FORMATAÇÃO (DEFINIÇÕES COMPLETAS) ---
+
+        // Funções de Utilidade
         function formatarTelefone(telefone) {
             if (!telefone) return '';
             const nums = String(telefone).replace(/\D/g, '');
@@ -164,74 +738,487 @@
 
             showMessageBox('🗺️ Link Copiado!', 'O link de navegação do Maps foi copiado para a área de transferência. Cole em seu navegador ou abra o app de Maps.');
         }
+        
+        function togglePagamentoFields() {
+            let forma = document.getElementById('formaPagamento').value;
+            let status = document.getElementById('statusPagamento').value;
+            let trocoGroup = document.getElementById('trocoGroup');
+            let fotoComprovante = document.getElementById('fotoComprovante');
+            let formaPagamentoGroup = document.getElementById('formaPagamentoGroup');
+            let formaPagamentoSelect = document.getElementById('formaPagamento');
 
-        // ----------------------------------------------------------------------
-        // FUNÇÃO DE INICIALIZAÇÃO SUPABASE E STORAGE
-        // ----------------------------------------------------------------------
-        let initializationAttempts = 0;
-        const MAX_ATTEMPTS = 10;
+            if (status === 'NÃO' || status === 'SIM') { 
+                 formaPagamentoGroup.style.display = 'block';
+            } else { 
+                formaPagamentoGroup.style.display = 'none';
+                formaPagamentoSelect.value = ''; 
+            }
 
-        window.initSupabase = function() {
-            try {
-                if (window.supabase) return;
+            if (forma === 'Dinheiro' && status === 'NÃO') {
+                trocoGroup.style.display = 'block';
+            } else {
+                trocoGroup.style.display = 'none';
+                document.getElementById('valorTroco').value = '';
+            }
 
-                // Tenta criar o cliente. O SDK está garantido de carregar localmente.
-                window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                console.log("Supabase inicializado e conectado!");
+            if ((forma === 'Pix' || forma === 'Cartão') && status === 'SIM') {
+                 fotoComprovante.style.display = 'block';
+            } else {
+                 fotoComprovante.style.display = 'none';
+                 document.getElementById('fotoInput').value = '';
+                 document.getElementById('previewFoto').innerHTML = '';
+            }
+        }
+
+        function toggleOutroCaixa() {
+            const caixa = document.getElementById('caixaSelect').value;
+            const outroMotivoGroup = document.getElementById('outroCaixaMotivo');
+            
+            if (caixa === 'Outro') {
+                outroMotivoGroup.style.display = 'block';
+            } else {
+                outroMotivoGroup.style.display = 'none';
+                document.getElementById('caixaMotivoInput').value = '';
+            }
+        }
+        
+        function renderizarCardEntrega(entrega, mostrarEntregador = false, isFiscal = false) {
+            let statusClass = `status-${entrega.status.replace(/\s/g, '').toLowerCase()}`;
+            let statusText = entrega.status.toUpperCase();
+            
+            let badges = '';
+            if (entrega.geladeira === 'Sim') badges += `<span class="geladeira-badge">❄️ GELADEIRA</span>`;
+            if (entrega.jaPago === 'SIM') badges += `<span class="pago-badge">✅ PAGO (${entrega.pagamento})</span>`;
+            if (entrega.jaPago === 'NÃO') badges += `<span class="cobrar-badge">💰 COBRAR ${entrega.valor}</span>`;
+            if (entrega.troco && entrega.troco !== 'Não') badges += `<span class="troco-badge">💵 TROCO: ${entrega.troco}</span>`;
+
+            let actions = '';
+            
+            const id = entrega.id; 
+
+            if (entrega.status === 'pendente' && tipoUsuario === 'entregador') {
+                actions = `<button class="btn-small btn-pegar" onclick="pegarEntrega('${id}')">Pegar Entrega</button>`;
+            } else if (entrega.status === 'em rota' && entrega.entregador === usuarioLogado && tipoUsuario === 'entregador') {
+                actions = `
+                    <button class="btn-small btn-maps" onclick="abrirNoMaps('${entrega.endereco}', '${entrega.bairro}')">🗺️ Abrir no Maps</button>
+                    <button class="btn-small btn-verde" onclick="abrirModalAnexo('${id}')">📸 Anexar Comprovante</button>
+                    <button class="btn-small btn-entregar" onclick="finalizarEntrega('${id}')">Entregue</button>
+                    <button class="btn-small btn-falha" onclick="falhaEntregaAcao('${id}')">Falha</button>
+                `;
+            }
+            
+            actions += `<button class="btn-small btn-ver" onclick="mostrarDetalhes('${id}')">Ver Detalhes</button>`;
+
+            if (isFiscal && entrega.status !== 'entregue' && entrega.status !== 'cancelada' && entrega.status !== 'falha') {
+                 actions += `<button class="btn-small btn-cancelar" onclick="cancelarEntrega('${id}')">Cancelar</button>`;
+            }
+
+            const entregadorInfo = mostrarEntregador && entrega.entregador ? 
+                `<div class="entrega-info"><strong>Entregador:</strong> ${entrega.entregador}</div>` : '';
+            
+            const adminInfo = isFiscal ? 
+                `<div class="entrega-info"><strong>Criada por:</strong> ${entrega.operadorCaixa} | <strong>Bairro:</strong> ${entrega.bairro}</div>` : 
+                `<div class="entrega-info"><strong>Bairro:</strong> ${entrega.bairro}</div>`;
                 
-                // Inicia a aplicação após um pequeno atraso para o DOM carregar
-                setTimeout(window.init, 50); 
+            return `
+                <div class="entrega-card">
+                    <div class="entrega-header">
+                        <span class="entrega-nome">${entrega.clienteNome}</span>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                    ${adminInfo}
+                    <div class="entrega-info"><strong>Valor:</strong> ${entrega.valor} (${entrega.pagamento}) | Caixa: ${entrega.caixa}</div>
+                    ${entregadorInfo}
+                    <div class="entrega-info" style="margin-top: 8px;">${badges}</div>
+                    <div class="entrega-actions">${actions}</div>
+                </div>
+            `;
+        }
 
-            } catch (error) {
-                initializationAttempts++;
-                if (initializationAttempts < MAX_ATTEMPTS) {
-                    setTimeout(window.initSupabase, 500); 
+        function carregarEntregasEntregador() {
+            const entregas = obterEntregasFiltradas();
+
+            const pendentes = entregas.filter(e => e.status === 'pendente');
+            const emRota = entregas.filter(e => e.entregador === usuarioLogado && e.status === 'em rota');
+            const historico = entregas.filter(e => e.status === 'entregue' || e.status === 'falha' || e.status === 'cancelada');
+
+            const emRotaCount = document.getElementById('entregasEmRotaCount');
+            if (emRotaCount) emRotaCount.textContent = emRota.length;
+            
+            const listaPendentes = document.getElementById('listaEntregasPendentes');
+            if (listaPendentes) listaPendentes.innerHTML = pendentes.map(e => renderizarCardEntrega(e, false, false)).join('') || '<div class="empty-state">Nenhuma entrega pendente na fila.</div>';
+
+            const listaEmRota = document.getElementById('listaEntregasEmRota');
+            if (listaEmRota) listaEmRota.innerHTML = emRota.map(e => renderizarCardEntrega(e, false, false)).join('') || '<div class="empty-state">Nenhuma entrega em sua rota.</div>';
+
+            const listaHistorico = document.getElementById('listaEntregasEntregues');
+            if (listaHistorico) listaHistorico.innerHTML = historico.map(e => renderizarCardEntrega(e, true, false)).join('') || '<div class="empty-state">Nenhum histórico de entrega hoje.</div>';
+        }
+        
+        function carregarDashboardFiscal() {
+            const entregas = obterEntregasFiltradas();
+
+            let totalPendentes = 0;
+            let totalEmRota = 0;
+            let totalEntregues = 0;
+            let totalArrecadadoNum = 0;
+            let dadosGrafico = {};
+
+            let listaHTML = '';
+
+            entregas.forEach(e => {
+                listaHTML += renderizarCardEntrega(e, true, true); 
+                
+                switch (e.status) {
+                    case 'pendente': totalPendentes++; break;
+                    case 'em rota': totalEmRota++; break;
+                    case 'entregue': 
+                        totalEntregues++;
+                        totalArrecadadoNum += e.valorNumerico; 
+                        break;
+                }
+                
+                dadosGrafico[e.status] = (dadosGrafico[e.status] || 0) + 1;
+            });
+
+            const totalPendentesEl = document.getElementById('totalPendentes');
+            if (totalPendentesEl) totalPendentesEl.textContent = totalPendentes;
+            const totalEmRotaEl = document.getElementById('totalEmRota');
+            if (totalEmRotaEl) totalEmRotaEl.textContent = totalEmRota;
+            const totalEntreguesEl = document.getElementById('totalEntregues');
+            if (totalEntreguesEl) totalEntreguesEl.textContent = totalEntregues;
+            const totalArrecadadoEl = document.getElementById('totalArrecadado');
+            if (totalArrecadadoEl) totalArrecadadoEl.textContent = formatarMoeda(totalArrecadadoNum);
+            
+            const listaTodasEntregas = document.getElementById('listaTodasEntregas');
+            if (listaTodasEntregas) listaTodasEntregas.innerHTML = listaHTML || `<div class="empty-state">Nenhuma entrega encontrada no período.</div>`;
+            
+            renderizarGraficoStatus(dadosGrafico);
+        }
+
+        function renderizarGraficoStatus(dataObject) {
+            const data = Object.keys(dataObject).map(key => ({
+                status: key,
+                count: dataObject[key]
+            }));
+
+            const container = d3.select("#statusChart");
+            if (!container.empty()) {
+                container.html("");
+
+                if (data.length === 0) {
+                    container.html('<div class="empty-state">Sem dados para exibir o gráfico.</div>');
                     return;
                 }
-                console.error("Erro fatal ao inicializar Supabase:", error);
-                const loader = document.getElementById('loader');
-                if (loader) {
-                    loader.innerHTML = `
-                        <h3 style="color: #d63031;">❌ Erro de Conexão</h3>
-                        <p>Não foi possível iniciar o Supabase. Detalhes: ${error.message}</p>
-                        <p>Verifique o arquivo local 'supabase.js' e a conexão com o banco.</p>
-                    `;
-                }
+
+                const width = 400;
+                const height = 200;
+                const margin = { top: 10, right: 10, bottom: 30, left: 40 };
+
+                const svg = container.append("svg")
+                    .attr("width", "100%")
+                    .attr("height", height)
+                    .attr("viewBox", `0 0 ${width} ${height}`)
+                    .append("g")
+                    .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+                const x = d3.scaleBand()
+                    .domain(data.map(d => d.status))
+                    .range([0, width - margin.left - margin.right])
+                    .padding(0.2);
+
+                const y = d3.scaleLinear()
+                    .domain([0, d3.max(data, d => d.count) || 1])
+                    .range([height - margin.top - margin.bottom, 0]);
+
+                svg.append("g")
+                    .attr("transform", `translate(0, ${height - margin.top - margin.bottom})`)
+                    .call(d3.axisBottom(x))
+                    .selectAll("text")
+                    .attr("class", "axis-label");
+
+                svg.append("g")
+                    .call(d3.axisLeft(y).ticks(d3.max(data, d => d.count) || 1).tickFormat(d3.format("d"))) 
+                    .selectAll("text")
+                    .attr("class", "axis-label");
+
+                svg.selectAll(".bar")
+                    .data(data)
+                    .enter().append("rect")
+                    .attr("class", d => `bar status-${d.status.replace(/\s/g, '').toLowerCase()}`)
+                    .attr("x", d => x(d.status))
+                    .attr("y", d => y(d.count))
+                    .attr("width", x.bandwidth())
+                    .attr("height", d => (height - margin.top - margin.bottom) - y(d.count));
             }
-        };
+        }
 
-        window.init = function() {
-            const loader = document.getElementById('loader');
-            const appContainer = document.getElementById('appContainer');
-            if (loader) loader.style.display = 'none';
-            if (appContainer) appContainer.style.display = 'block';
+        function carregarPerformanceEntregadores() {
+            const entregas = obterEntregasFiltradas();
 
-            // Carregamento de dados locais (Entregadores e Atendentes)
-            const storedEntregadores = localStorage.getItem('ENTREGADORES');
-            const storedAtendentes = localStorage.getItem('ATENDENTES');
-            
-            if (storedEntregadores) ENTREGADORES = JSON.parse(storedEntregadores); else salvarEntregadores();
-            if (storedAtendentes) ATENDENTES = JSON.parse(storedAtendentes); else salvarEntregadores();
+            const performanceData = {};
 
-            // Configuração do handler de upload (apenas para limpar o file input após seleção)
-            document.getElementById('fotoInput').addEventListener('change', function(event) {
-                const file = event.target.files[0];
-                if (file) {
-                    // Aqui você pode adicionar um preview simples sem Base64, se desejar
-                } else {
-                     document.getElementById('previewFoto').innerHTML = '';
+            entregas.forEach(e => {
+                const nome = e.entregador || 'Não Atribuído';
+                
+                if (!performanceData[nome]) {
+                    performanceData[nome] = { atribuido: 0, entregue: 0, falha: 0, cancelada: 0 };
+                }
+
+                if (e.status !== 'pendente') {
+                    performanceData[nome].atribuido++;
+                }
+
+                if (e.status === 'entregue') {
+                    performanceData[nome].entregue++;
+                } else if (e.status === 'falha') {
+                    performanceData[nome].falha++;
+                } else if (e.status === 'cancelada') {
+                    performanceData[nome].cancelada++;
                 }
             });
 
-            // Inicia o listener do Supabase para buscar os dados
-            setupSupabaseListener();
+            const tbody = document.getElementById('performanceBody');
+            if (tbody) {
+                tbody.innerHTML = '';
             
-            voltarInicio(); 
+                let listaEntregadores = Object.keys(performanceData).sort((a, b) => {
+                    if (a === 'Não Atribuído') return 1;
+                    if (b === 'Não Atribuído') return -1;
+                    const successA = (performanceData[a].entregue / (performanceData[a].atribuido || 1)) * 100;
+                    const successB = (performanceData[b].entregue / (performanceData[b].atribuido || 1)) * 100;
+                    return successB - successA;
+                });
+
+                if (listaEntregadores.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhuma entrega finalizada ou em rota no período.</td></tr>';
+                    return;
+                }
+                
+                listaEntregadores.forEach(nome => {
+                    const data = performanceData[nome];
+                    const total = data.atribuido;
+                    const sucesso = data.entregue;
+                    const taxaSucesso = total > 0 ? ((sucesso / total) * 100).toFixed(1) : '0.0';
+                    
+                    let statusClass = taxaSucesso >= 90 ? 'green' : (taxaSucesso >= 75 ? '' : 'danger');
+
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong>${nome}</strong></td>
+                            <td>${total}</td>
+                            <td>${sucesso}</td>
+                            <td class="performance-metric" style="color: ${statusClass === 'green' ? '#28a745' : (statusClass === 'danger' ? '#dc3545' : '#3d4b7a')};">${taxaSucesso}%</td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+        
+        function carregarGestaoAdm() {
+            if (tipoUsuario !== 'fiscal') {
+                mostrarLogin('fiscal');
+                return;
+            } 
+            
+            const select = document.getElementById('entregadorGestaoSelect');
+            if (select) {
+                select.innerHTML = '<option value="">Selecione o Entregador...</option>';
+                
+                const entregadoresOrdenados = Object.keys(ENTREGADORES).sort();
+                entregadoresOrdenados.forEach(nome => {
+                    select.innerHTML += `<option value="${nome}">${nome} (${ENTREGADORES[nome].pontos || 0} Pts)</option>`;
+                });
+            }
+            
+            const gestaoCard = document.getElementById('gestaoCard');
+            if (gestaoCard) gestaoCard.style.display = 'none';
+            carregarListaEntregadoresAdm();
+            mostrarTela('screenAdmin');
         }
 
-        // ----------------------------------------------------------------------
-        // FUNÇÃO DE UPLOAD PARA O STORAGE
-        // ----------------------------------------------------------------------
+        function carregarDetalhesGestao() {
+            const nome = document.getElementById('entregadorGestaoSelect').value;
+            entregadorEmGestao = nome;
+            
+            const gestaoCard = document.getElementById('gestaoCard');
+            if (!nome || !gestaoCard) {
+                if (gestaoCard) gestaoCard.style.display = 'none';
+                return;
+            }
+
+            const data = ENTREGADORES[nome];
+            const colabGestaoNome = document.getElementById('colabGestaoNome');
+            if (colabGestaoNome) colabGestaoNome.textContent = nome;
+            const colabGestaoSenha = document.getElementById('colabGestaoSenha');
+            if (colabGestaoSenha) colabGestaoSenha.textContent = data.senha;
+            const colabGestaoPontos = document.getElementById('colabGestaoPontos');
+            if (colabGestaoPontos) colabGestaoPontos.textContent = `${data.pontos || 0} Pts`;
+            gestaoCard.style.display = 'block';
+        }
+
+        function ajustarPontosEntregador(acao) {
+            const user = entregadorEmGestao;
+            const isAdd = acao === 'adicionar';
+            const acaoDisplay = isAdd ? 'ADICIONAR' : 'RETIRAR';
+
+            const pontosStr = window.prompt(`Digite a quantidade de pontos que deseja ${acaoDisplay} para ${user}:`);
+            if (pontosStr === null) return;
+            
+            const pontos = parseInt(pontosStr);
+
+            if (isNaN(pontos) || pontos <= 0) { showMessageBox('❌ Erro', 'Pontuação inválida!'); return; }
+
+            const motivo = window.prompt(`Digite o MOTIVO para ${acaoDisplay} ${pontos} pontos de ${user} (Obrigatório):`);
+            if (!motivo || motivo.trim() === '') { showMessageBox('⚠️ Alerta', 'Motivo obrigatório. Ação cancelada.'); return; }
+
+            const ajustePontos = isAdd ? pontos : -pontos;
+            
+            ENTREGADORES[user].pontos = (ENTREGADORES[user].pontos || 0) + ajustePontos;
+
+            const novoHistorico = {
+                pontos: ajustePontos,
+                motivo: motivo,
+                adm: usuarioLogado,
+                timestamp: new Date().toISOString()
+            };
+            ENTREGADORES[user].historicoPontos.push(novoHistorico);
+            
+            salvarEntregadores();
+            carregarDetalhesGestao();
+            showMessageBox('✅ Sucesso', `${pontos} Pontos ${isAdd ? 'adicionados' : 'removidos'} de ${user}.`);
+        }
+
+        function resetarSenhaEntregador() {
+             showConfirmBox(`⚠️ Confirmação de Reset`, `Para resetar a senha de "${entregadorEmGestao}" para a padrão ${SENHA_RESET}, clique em Sim.`, () => {
+                 ENTREGADORES[entregadorEmGestao].senha = SENHA_RESET;
+                 salvarEntregadores();
+                 showMessageBox('✅ Sucesso', `Senha de "${entregadorEmGestao}" resetada para ${SENHA_RESET}.`);
+                 carregarDetalhesGestao();
+            });
+        }
+        
+        function removerEntregadorAcao() {
+            showConfirmBox('⚠️ Confirmação', `Tem certeza que deseja remover permanentemente o entregador ${entregadorEmGestao}?`, () => {
+                delete ENTREGADORES[entregadorEmGestao];
+                salvarEntregadores();
+                showMessageBox('✅ Sucesso', `Entregador ${entregadorEmGestao} removido.`);
+                entregadorEmGestao = null;
+                carregarGestaoAdm(); 
+            });
+        }
+
+        function carregarListaEntregadoresAdm() {
+            const lista = document.getElementById('listaEntregadoresAdm');
+            if (!lista) return;
+            lista.innerHTML = '';
+            
+            for (const nome in ENTREGADORES) {
+                const data = ENTREGADORES[nome];
+                lista.innerHTML += `
+                    <div class="adm-item" onclick="document.getElementById('entregadorGestaoSelect').value='${nome}'; carregarDetalhesGestao();">
+                        <span><strong>${nome}</strong> - Pts: ${data.pontos || 0}</span>
+                        <div class="entrega-actions" style="gap: 5px; margin: 0;">
+                            <span class="status-badge status-emrota" style="flex: none; padding: 5px 10px;">Gerenciar →</span>
+                        </div>
+                    </div>
+                `;
+            }
+            if (Object.keys(ENTREGADORES).length === 0) {
+                 lista.innerHTML = '<div class="empty-state" style="padding: 10px;">Nenhum entregador cadastrado.</div>';
+            }
+        }
+        
+        function adicionarEntregador() {
+            const nomeInput = document.getElementById('novoEntregadorNome');
+            const senhaInput = document.getElementById('novoEntregadorSenha');
+            const telefoneInput = document.getElementById('novoEntregadorTelefone');
+            
+            const nome = nomeInput ? nomeInput.value.trim() : '';
+            const senha = senhaInput ? senhaInput.value.trim() : '';
+            const telefone = telefoneInput ? telefoneInput.value.trim().replace(/\D/g, '') : '';
+
+            if (!nome || !senha || senha.length < 4) {
+                showMessageBox('⚠️ Erro', 'Nome e senha (mínimo 4 caracteres) são obrigatórios.');
+                return;
+            }
+
+            if (ENTREGADORES[nome]) {
+                showMessageBox('⚠️ Erro', `Entregador ${nome} já existe.`);
+                return;
+            }
+
+            ENTREGADORES[nome] = { senha: senha, telefone: telefone, pontos: 0, historicoPontos: [] };
+            salvarEntregadores();
+
+            showMessageBox('✅ Sucesso', `Entregador ${nome} adicionado com sucesso!`);
+            if (nomeInput) nomeInput.value = '';
+            if (senhaInput) senhaInput.value = '';
+            if (telefoneInput) telefoneInput.value = '';
+            carregarGestaoAdm(); 
+        }
+
+        function mostrarDetalhes(docId) {
+             const entrega = todasEntregas.find(e => e.id == docId);
+             if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
+
+             let content = `
+                 <h2 style="color: #d63031;">Detalhes da Entrega #${entrega.id}</h2>
+                 <p><strong>Status:</strong> <span class="status-badge status-${entrega.status.replace(/\s/g, '').toLowerCase()}">${entrega.status.toUpperCase()}</span></p>
+                 <hr style="margin: 15px 0;">
+                 <h4>Cliente e Destino</h4>
+                 <p><strong>Cliente:</strong> ${entrega.clienteNome}</p>
+                 <p><strong>Endereço:</strong> ${entrega.endereco}</p>
+                 <p><strong>Bairro:</strong> ${entrega.bairro}</p>
+                 <p><strong>Telefone:</strong> ${formatarTelefone(entrega.telefone)}</p>
+                 <p><strong>Geladeira:</strong> ${entrega.geladeira}</p>
+                 <hr style="margin: 15px 0;">
+                 <h4>Financeiro e Logística</h4>
+                 <p><strong>Valor Total:</strong> ${entrega.valor}</p>
+                 <p><strong>Pagamento:</strong> ${entrega.pagamento} (${entrega.jaPago === 'SIM' ? 'JÁ PAGO' : 'COBRAR'})</p>
+                 <p><strong>Troco Necessário:</strong> ${entrega.troco}</p>
+                 <p><strong>Recibo/NFe:</strong> ${entrega.recibo}</p>
+                 <p><strong>Caixa/Origem:</strong> ${entrega.caixa} (Operador: ${entrega.operadorCaixa})</p>
+                 <hr style="margin: 15px 0;">
+                 <h4>Timeline</h4>
+                 <p><strong>Criada em:</strong> ${formatSupabaseDate(entrega.created_at)}</p>
+                 <p><strong>Entregador:</strong> ${entrega.entregador || 'Aguardando Atribuição'}</p>
+                 <p><strong>Saiu em:</strong> ${formatSupabaseDate(entrega.saiuEm)}</p>
+                 <p><strong>Finalizada em:</strong> ${formatSupabaseDate(entrega.finalizadoEm)}</p>
+                 <p><strong>Observações (Entregador):</strong> ${entrega.observacao || 'N/A'}</p>
+             `;
+             
+             if (entrega.motivoFalha) {
+                  content += `<p style="color: #dc3545;"><strong>Motivo Falha/Cancelamento:</strong> ${entrega.motivoFalha || entrega.motivoCancelamento}</p>`;
+             }
+
+             // Comprovantes são agora URLs do Storage
+             if (entrega.comprovante && entrega.comprovante.startsWith('http')) {
+                 content += `
+                     <h4>📸 Comprovante do Caixa (Antecipado)</h4>
+                     <img src="${entrega.comprovante}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
+                 `;
+             }
+             
+             if (entrega.comprovanteEntregador && entrega.comprovanteEntregador.startsWith('http')) {
+                 content += `
+                     <h4>📸 Comprovante do Entregador</h4>
+                     <img src="${entrega.comprovanteEntregador}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
+                 `;
+             }
+
+             const modalConteudo = document.getElementById('modalConteudo');
+             if (modalConteudo) modalConteudo.innerHTML = content;
+             const modalDetalhes = document.getElementById('modalDetalhes');
+             if (modalDetalhes) modalDetalhes.classList.add('active');
+         }
+
+         function fecharModal() {
+             const modalDetalhes = document.getElementById('modalDetalhes');
+             if (modalDetalhes) modalDetalhes.classList.remove('active');
+         }
+
+        // Funções CRUD
         async function uploadComprovante(file, nomeCliente, tipoAnexo) {
             if (!window.supabase) {
                 showMessageBox('Erro', 'Conexão com o Supabase perdida.');
@@ -275,12 +1262,10 @@
             }
         }
         
-        // --- FUNÇÕES CRUD E LISTENERS (DEFINIÇÕES COMPLETAS) ---
-        
         async function criarEntrega() {
             if (!window.supabase) return showMessageBox('Erro', 'Supabase não inicializado.');
             
-            const operadorCaixa = usuarioLogado; 
+            const operadorCaixa = document.getElementById('operadorLogado') ? document.getElementById('operadorLogado').textContent : usuarioLogado;
             const caixaSelect = document.getElementById('caixaSelect').value; 
             const caixaMotivo = document.getElementById('caixaMotivoInput').value.trim();
             const caixa = caixaSelect === 'Outro' ? `Outro: ${caixaMotivo}` : caixaSelect;
@@ -363,11 +1348,11 @@
                 showMessageBox('✅ Sucesso', `Entrega criada com sucesso! Cliente: ${entrega.clienteNome}`);
 
                 document.getElementById('formEntrega').reset();
-                document.getElementById('outroCaixaMotivo').style.display = 'none';
-                document.getElementById('fotoComprovante').style.display = 'none';
-                document.getElementById('previewFoto').innerHTML = '';
-                document.getElementById('trocoGroup').style.display = 'none';
-                document.getElementById('formaPagamentoGroup').style.display = 'none';
+                if (document.getElementById('outroCaixaMotivo')) document.getElementById('outroCaixaMotivo').style.display = 'none';
+                if (document.getElementById('fotoComprovante')) document.getElementById('fotoComprovante').style.display = 'none';
+                if (document.getElementById('previewFoto')) document.getElementById('previewFoto').innerHTML = '';
+                if (document.getElementById('trocoGroup')) document.getElementById('trocoGroup').style.display = 'none';
+                if (document.getElementById('formaPagamentoGroup')) document.getElementById('formaPagamentoGroup').style.display = 'none';
                 
                 atualizarTelas(); 
 
@@ -439,9 +1424,431 @@
             }
         }
 
-        // ... (Todas as outras funções como pegarEntrega, carregarDashboardFiscal, etc. devem estar aqui) ...
+        function pegarEntrega(docId) {
+            const entregasHoje = obterEntregasFiltradas();
+            const emRotaDoUsuario = entregasHoje.filter(e => e.entregador === usuarioLogado && e.status === 'em rota');
+            
+            if (emRotaDoUsuario.length >= 5) {
+                showMessageBox('🚫 Limite Atingido', 'Você já possui 5 entregas em rota. Finalize algumas antes de pegar mais.');
+                return;
+            }
+
+            showConfirmBox('Confirmação', `Deseja realmente pegar esta entrega? Ela será atribuída a ${usuarioLogado}.`, async () => {
+                if (await atualizarEntrega(docId, { 
+                    status: 'em rota', 
+                    entregador: usuarioLogado, 
+                    saiuEm: new Date().toISOString() 
+                })) {
+                    showMessageBox('✅ Sucesso', 'Entrega atribuída! Boa rota!');
+                }
+            });
+        }
         
-        // Gatilho final: Inicia a tentativa de conexão do Supabase quando o DOM está pronto.
+        function falhaEntregaAcao(docId) {
+            acaoCancelamentoDocId = docId;
+            acaoCancelamentoTipo = 'falha';
+            
+            const btnConfirmar = document.getElementById('btnConfirmarCancelamento');
+            if (btnConfirmar) {
+                btnConfirmar.onclick = confirmarModalCancelamento;
+                btnConfirmar.textContent = 'Registrar Falha';
+                btnConfirmar.classList.remove('danger');
+                btnConfirmar.classList.add('btn-falha'); 
+            }
+            
+            const modalCancelTitle = document.getElementById('modalCancelTitle');
+            if (modalCancelTitle) modalCancelTitle.textContent = '⚠️ Registrar Falha na Entrega';
+            const motivoCancelamentoInput = document.getElementById('motivoCancelamentoInput');
+            if (motivoCancelamentoInput) motivoCancelamentoInput.value = '';
+            const obsCancelamentoTextarea = document.getElementById('obsCancelamentoTextarea');
+            if (obsCancelamentoTextarea) obsCancelamentoTextarea.value = '';
+            const modalCancelamento = document.getElementById('modalCancelamento');
+            if (modalCancelamento) modalCancelamento.classList.add('active');
+        }
+
+        function finalizarEntrega(docId) {
+             const entrega = todasEntregas.find(e => e.id == docId);
+             if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
+
+             if (entrega.jaPago === 'NÃO') {
+                 showConfirmBox('🚨 Cobrança Pendente', `Confirma que o valor ${entrega.valor} foi cobrado do cliente?`, () => {
+                     continuarFinalizarEntrega(docId, entrega);
+                 });
+                 return; 
+             }
+             
+             continuarFinalizarEntrega(docId, entrega);
+        }
+        
+        async function continuarFinalizarEntrega(docId, entrega) {
+             if (entrega.pagamento === 'Pix' || entrega.pagamento === 'Cartão') {
+                 window.entregaParaFinalizarId = docId; 
+                 const anexoInputEntregador = document.getElementById('anexoInputEntregador');
+                 if (anexoInputEntregador) anexoInputEntregador.value = '';
+                 const obsAnexoEntregador = document.getElementById('obsAnexoEntregador');
+                 if (obsAnexoEntregador) obsAnexoEntregador.value = '';
+                 const modalAnexo = document.getElementById('modalAnexo');
+                 if (modalAnexo) modalAnexo.classList.add('active');
+                 
+                 return; 
+             }
+
+             const obs = window.prompt('Observação da entrega (ex: Entregue ao vizinho, Deixado na caixa de correio). (Opcional):');
+             
+             const updates = {
+                 status: 'entregue', 
+                 finalizadoEm: new Date().toISOString(),
+                 observacao: obs,
+                 comprovanteEntregador: 'Não aplicável'
+             };
+
+             if (await atualizarEntrega(docId, updates)) {
+                 showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso!');
+             }
+        }
+        
+        function abrirModalAnexo(docId) {
+            const entrega = todasEntregas.find(e => e.id == docId);
+            if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
+            if (entrega.pagamento !== 'Pix' && entrega.pagamento !== 'Cartão') {
+                showMessageBox('📸 Alerta', 'O comprovante é obrigatório apenas para entregas com pagamento em Pix ou Cartão.');
+                return;
+            }
+            window.entregaParaFinalizarId = docId;
+            const anexoInputEntregador = document.getElementById('anexoInputEntregador');
+            if (anexoInputEntregador) anexoInputEntregador.value = '';
+            const obsAnexoEntregador = document.getElementById('obsAnexoEntregador');
+            if (obsAnexoEntregador) obsAnexoEntregador.value = '';
+            const modalAnexo = document.getElementById('modalAnexo');
+            if (modalAnexo) modalAnexo.classList.add('active');
+        }
+
+        function confirmarAnexo() {
+            const docId = window.entregaParaFinalizarId;
+            const entrega = todasEntregas.find(e => e.id == docId);
+            
+            const fileInput = document.getElementById('anexoInputEntregador');
+            const fotoFile = fileInput && fileInput.files ? fileInput.files[0] : null;
+            const obs = document.getElementById('obsAnexoEntregador') ? document.getElementById('obsAnexoEntregador').value.trim() : '';
+            
+            if (entrega.pagamento === 'Pix' || entrega.pagamento === 'Cartão') {
+                if (!fotoFile) {
+                    showMessageBox('⚠️ Erro', 'Anexo do comprovante é obrigatório.');
+                    return;
+                }
+                
+                finalizarEntregaComAnexo(docId, fotoFile, obs); 
+                fecharModalAnexo();
+
+            } else {
+                 finalizarEntregaComAnexo(docId, null, obs); 
+                 fecharModalAnexo();
+            }
+        }
+
+        async function finalizarEntregaComAnexo(docId, fotoFile, obs) {
+              let comprovanteUrl = 'Não aplicável';
+              const entrega = todasEntregas.find(e => e.id == docId);
+
+              if (fotoFile) { 
+                  comprovanteUrl = await uploadComprovante(fotoFile, entrega.clienteNome, 'entregador');
+                  if (!comprovanteUrl) return; 
+              }
+
+              const updates = {
+                  status: 'entregue', 
+                  finalizadoEm: new Date().toISOString(), 
+                  observacao: obs,
+                  comprovanteEntregador: comprovanteUrl 
+              };
+              
+              if (await atualizarEntrega(docId, updates)) {
+                  showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso!');
+              }
+         }
+        
+        function fecharModalAnexo() {
+            const modalAnexo = document.getElementById('modalAnexo');
+            if (modalAnexo) modalAnexo.classList.remove('active');
+            const anexoInputEntregador = document.getElementById('anexoInputEntregador');
+            if (anexoInputEntregador) anexoInputEntregador.value = '';
+            const obsAnexoEntregador = document.getElementById('obsAnexoEntregador');
+            if (obsAnexoEntregador) obsAnexoEntregador.value = '';
+            window.entregaParaFinalizarId = null;
+        }
+        
+        function cancelarEntrega(docId) {
+            acaoCancelamentoDocId = docId;
+            acaoCancelamentoTipo = 'cancelada';
+            
+            const btnConfirmar = document.getElementById('btnConfirmarCancelamento');
+            if (btnConfirmar) {
+                btnConfirmar.onclick = confirmarModalCancelamento;
+                btnConfirmar.textContent = 'Confirmar Cancelamento';
+                btnConfirmar.classList.remove('btn-falha');
+                btnConfirmar.classList.add('danger');
+            }
+            
+            const modalCancelTitle = document.getElementById('modalCancelTitle');
+            if (modalCancelTitle) modalCancelTitle.textContent = '❌ Cancelar Entrega';
+            const motivoCancelamentoInput = document.getElementById('motivoCancelamentoInput');
+            if (motivoCancelamentoInput) motivoCancelamentoInput.value = '';
+            const obsCancelamentoTextarea = document.getElementById('obsCancelamentoTextarea');
+            if (obsCancelamentoTextarea) obsCancelamentoTextarea.value = '';
+            const modalCancelamento = document.getElementById('modalCancelamento');
+            if (modalCancelamento) modalCancelamento.classList.add('active');
+        }
+
+        async function confirmarModalCancelamento() {
+            const motivo = document.getElementById('motivoCancelamentoInput') ? document.getElementById('motivoCancelamentoInput').value.trim() : '';
+            const obs = document.getElementById('obsCancelamentoTextarea') ? document.getElementById('obsCancelamentoTextarea').value.trim() : '';
+            const docId = acaoCancelamentoDocId;
+            const tipo = acaoCancelamentoTipo;
+
+            if (!motivo) {
+                showMessageBox('⚠️ Erro', 'O Motivo do Cancelamento/Falha é obrigatório.');
+                return;
+            }
+
+            const updates = {
+                status: tipo, 
+                finalizadoEm: new Date().toISOString(),
+                observacao: obs || null,
+            };
+            
+            let sucessoMsg = '';
+            
+            if (tipo === 'cancelada') {
+                 updates.motivoCancelamento = motivo;
+                 updates.canceladoPor = usuarioLogado;
+                 sucessoMsg = `Entrega CANCELADA com sucesso! Motivo: ${motivo}`;
+            } else if (tipo === 'falha') {
+                 updates.motivoFalha = motivo;
+                 sucessoMsg = `Falha registrada com sucesso! Motivo: ${motivo}`;
+            }
+            
+            if (await atualizarEntrega(docId, updates)) {
+                showMessageBox('✅ Sucesso', sucessoMsg);
+                fecharModalCancelamento();
+            }
+        }
+        
+        function fecharModalCancelamento() {
+            const modalCancelamento = document.getElementById('modalCancelamento');
+            if (modalCancelamento) modalCancelamento.classList.remove('active');
+            acaoCancelamentoDocId = null;
+            acaoCancelamentoTipo = null;
+        }
+
+        // Funções de Navegação e Autenticação
+        function mostrarTela(screenId) {
+             document.querySelectorAll('.screen').forEach(screen => {
+                 screen.classList.remove('active');
+             });
+             const screen = document.getElementById(screenId);
+             if (screen) screen.classList.add('active');
+             
+             const logoutBtn = document.getElementById('logoutBtn');
+             if (logoutBtn) {
+                 if (screenId === 'screenInicio') {
+                     logoutBtn.style.display = 'none';
+                 } else {
+                     logoutBtn.style.display = 'block';
+                 }
+             }
+         }
+
+         function voltarInicio() {
+             usuarioLogado = null;
+             tipoUsuario = null;
+             mostrarTela('screenInicio');
+         }
+
+         function logout() {
+             showConfirmBox('🚪 Sair', `Tem certeza que deseja sair do painel ${tipoUsuario}?`, voltarInicio);
+         }
+
+         function mostrarLogin(tipo) {
+             tipoLoginAtual = tipo;
+             const loginTitulo = document.getElementById('loginTitulo');
+             if (loginTitulo) loginTitulo.textContent = `Login ${tipo.toUpperCase()}`;
+             const loginAtendimento = document.getElementById('loginAtendimento');
+             if (loginAtendimento) loginAtendimento.style.display = 'none';
+             const loginSenha = document.getElementById('loginSenha');
+             if (loginSenha) loginSenha.style.display = 'none';
+
+             if (tipo === 'atendimento') {
+                 if (loginAtendimento) loginAtendimento.style.display = 'block';
+                 const select = document.getElementById('atendenteNome');
+                 if (select) {
+                     select.innerHTML = '<option value="">Selecione o Atendente...</option>';
+                     Object.keys(ATENDENTES).sort().forEach(nome => {
+                         select.innerHTML += `<option value="${nome}">${nome}</option>`;
+                     });
+                 }
+             } else {
+                 if (loginSenha) loginSenha.style.display = 'block';
+                 const select = document.getElementById('loginNome');
+                 if (select) {
+                     select.innerHTML = '<option value="">Selecione o Usuário...</option>';
+                     const users = tipo === 'fiscal' ? GESTORES : ENTREGADORES;
+                     Object.keys(users).sort().forEach(nome => {
+                         select.innerHTML += `<option value="${nome}">${nome}</option>`;
+                     });
+                 }
+             }
+             mostrarTela('screenLogin');
+         }
+         
+         function fazerLogin() {
+             const loginNome = document.getElementById('loginNome');
+             const loginSenhaInput = document.getElementById('loginSenhaInput');
+             const nome = loginNome ? loginNome.value : '';
+             const senha = loginSenhaInput ? loginSenhaInput.value : '';
+             const users = tipoLoginAtual === 'fiscal' ? GESTORES : ENTREGADORES;
+             
+             if (!nome || !senha) {
+                 showMessageBox('⚠️ Erro', 'Nome e senha são obrigatórios.');
+                 return;
+             }
+
+             if (users[nome] && users[nome].senha === senha) {
+                 usuarioLogado = nome;
+                 tipoUsuario = tipoLoginAtual;
+                 if (loginSenhaInput) loginSenhaInput.value = '';
+                 
+                 if (tipoUsuario === 'entregador') {
+                     const nomeEntregador = document.getElementById('nomeEntregador');
+                     if (nomeEntregador) nomeEntregador.textContent = usuarioLogado;
+                     mostrarTela('screenEntregador');
+                 } else if (tipoUsuario === 'fiscal') {
+                     const nomeFiscal = document.getElementById('nomeFiscal');
+                     if (nomeFiscal) nomeFiscal.textContent = usuarioLogado;
+                     irParaDashboardFiscal();
+                 }
+                 atualizarTelas();
+             } else {
+                 showMessageBox('❌ Erro', 'Usuário ou senha inválidos.');
+             }
+         }
+         
+         function loginAtendimento() {
+             const atendenteNome = document.getElementById('atendenteNome');
+             const atendenteSenha = document.getElementById('atendenteSenha');
+             const nome = atendenteNome ? atendenteNome.value : '';
+             const senha = atendenteSenha ? atendenteSenha.value : '';
+             
+             if (!nome || !senha) {
+                 showMessageBox('⚠️ Erro', 'Nome e senha são obrigatórios.');
+                 return;
+             }
+
+             if (ATENDENTES[nome] && ATENDENTES[nome].senha === senha) {
+                 usuarioLogado = nome;
+                 tipoUsuario = 'atendimento';
+                 const operadorLogado = document.getElementById('operadorLogado');
+                 if (operadorLogado) operadorLogado.textContent = usuarioLogado;
+                 if (atendenteSenha) atendenteSenha.value = '';
+                 
+                 mostrarTela('screenCriarEntrega');
+             } else {
+                 showMessageBox('❌ Erro', 'Atendente ou senha inválidos.');
+             }
+         }
+         
+         function irParaDashboardFiscal() {
+             mostrarTela('screenFiscal');
+             const dataFiscal = document.getElementById('dataFiscal');
+             const dataInicial = document.getElementById('dataInicial');
+             const dataFinal = document.getElementById('dataFinal');
+             if (dataFiscal && dataInicial && dataFinal) {
+                 dataFiscal.textContent = `Dados de: ${dataInicial.value || 'Início'} até ${dataFinal.value || 'Hoje'}`;
+             }
+             atualizarTelas();
+         }
+         
+         function mostrarPerformanceEntregadores() {
+             const performancePeriodo = document.getElementById('performancePeriodo');
+             const dataInicial = document.getElementById('dataInicial');
+             const dataFinal = document.getElementById('dataFinal');
+             if (performancePeriodo && dataInicial && dataFinal) {
+                 performancePeriodo.textContent = `Período: ${dataInicial.value || 'Início'} até ${dataFinal.value || 'Hoje'}`;
+             }
+             carregarPerformanceEntregadores();
+             mostrarTela('screenPerformance');
+         }
+
+        function atualizarTelas() {
+            if (tipoUsuario === 'entregador') {
+                carregarEntregasEntregador();
+            } else if (tipoUsuario === 'fiscal') {
+                carregarDashboardFiscal();
+            } else if (tipoUsuario === 'atendimento') {
+                mostrarTela('screenCriarEntrega');
+            }
+        }
+        
+        // ----------------------------------------------------------------------
+        // LÓGICA DE INICIALIZAÇÃO REAL (DEVE ESTAR NO FINAL)
+        // ----------------------------------------------------------------------
+        
+        window.init = function() {
+            // MOSTRA A INTERFACE APÓS A CONEXÃO
+            const loader = document.getElementById('loader');
+            const appContainer = document.getElementById('appContainer');
+            if (loader) loader.style.display = 'none';
+            if (appContainer) appContainer.style.display = 'block';
+
+            // Carregamento de dados locais (Entregadores e Atendentes)
+            const storedEntregadores = localStorage.getItem('ENTREGADORES');
+            const storedAtendentes = localStorage.getItem('ATENDENTES');
+            
+            if (storedEntregadores) ENTREGADORES = JSON.parse(storedEntregadores); else salvarEntregadores();
+            if (storedAtendentes) ATENDENTES = JSON.parse(storedAtendentes); else salvarEntregadores();
+
+            // Handlers de input
+            const fotoInput = document.getElementById('fotoInput');
+            if (fotoInput) fotoInput.addEventListener('change', function(event) {
+                const previewFoto = document.getElementById('previewFoto');
+                if (previewFoto) {
+                    if (!event.target.files[0]) previewFoto.innerHTML = '';
+                    // Se quisesse um preview local da imagem, o código iria aqui, mas sem Base64.
+                }
+            });
+
+            setupSupabaseListener();
+            voltarInicio(); 
+        }
+
+        window.initSupabase = function() {
+            try {
+                if (window.supabase) return;
+                
+                // Tenta criar o cliente. O SDK está garantido de carregar localmente.
+                window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                console.log("Supabase inicializado e conectado!");
+                
+                setTimeout(window.init, 50); 
+
+            } catch (error) {
+                initializationAttempts++;
+                if (initializationAttempts < 2 && typeof supabase === 'undefined') {
+                    setTimeout(window.initSupabase, 500); 
+                    return;
+                }
+                
+                console.error("Erro fatal ao inicializar Supabase:", error);
+                const loader = document.getElementById('loader');
+                if (loader) {
+                    loader.innerHTML = `
+                        <h3 style="color: #d63031;">❌ Erro de Conexão</h3>
+                        <p>Não foi possível iniciar o Supabase. Verifique a URL e a chave. Detalhes: ${error.message}</p>
+                    `;
+                }
+            }
+        };
+
+        // Gatilho Final: Inicia a tentativa de conexão do Supabase quando o DOM está pronto.
         document.addEventListener('DOMContentLoaded', window.initSupabase);
 
     </script>
