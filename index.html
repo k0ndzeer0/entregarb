@@ -3,8 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Entregas - Rio Branco</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <title>Entregas - Rio Branco (Dashboard)</title>
+    
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            query, 
+            addDoc, 
+            updateDoc, 
+            doc, 
+            onSnapshot, 
+            setLogLevel,
+            serverTimestamp,
+            where 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- VARIÁVEIS GLOBAIS DE INICIALIZAÇÃO (NECESSÁRIAS PARA O AMBIENTE) ---
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // Variáveis de escopo global para acesso no script
+        window.db = null;
+        window.auth = null;
+        window.firestoreInit = false;
+        window.userId = null;
+        window.appId = appId; // Disponibiliza o appId globalmente
+
+        // --- FUNÇÃO DE INICIALIZAÇÃO FIREBASE (globalmente acessível) ---
+        window.initFirebase = async function() {
+            try {
+                if (window.firestoreInit) return;
+                
+                setLogLevel('Debug'); // Para logs de debug no console
+                const app = initializeApp(firebaseConfig);
+                window.db = getFirestore(app);
+                window.auth = getAuth(app);
+                
+                // 1. Autenticação (Obrigatória para acessar o Firestore)
+                if (initialAuthToken) {
+                    await signInWithCustomToken(window.auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(window.auth);
+                }
+                
+                // 2. Listener de Estado de Autenticação
+                onAuthStateChanged(window.auth, (user) => {
+                    if (user) {
+                        window.userId = user.uid;
+                        window.firestoreInit = true;
+                        console.log("Firestore inicializado e autenticado. User ID:", window.userId);
+                        // Inicia o resto da aplicação
+                        window.init(); 
+                    } else {
+                        console.error("Usuário deslogado ou falha na autenticação.");
+                    }
+                });
+
+            } catch (error) {
+                console.error("Erro ao inicializar Firebase:", error);
+            }
+        };
+
+        // Torna as referências do Firestore acessíveis
+        window.getFirestoreExports = { collection, query, addDoc, updateDoc, doc, onSnapshot, serverTimestamp, where };
+
+        // Inicia o processo de inicialização do Firebase imediatamente
+        window.initFirebase();
+
+    </script>
     <style>
         /* [ESTILOS BASE MANTIDOS] */
         * {
@@ -17,6 +89,8 @@
             background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
             min-height: 100vh;
             padding: 10px;
+            display: flex; /* Adicionado para footer fixo */
+            flex-direction: column; /* Adicionado para footer fixo */
         }
         .container {
             max-width: 600px;
@@ -25,6 +99,8 @@
             border-radius: 20px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
             overflow: hidden;
+            flex-grow: 1; /* Faz o container crescer e empurrar o footer */
+            margin-bottom: 20px; /* Espaçamento entre container e footer */
         }
         .header {
             background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
@@ -115,6 +191,7 @@
             border-radius: 12px;
             cursor: pointer;
             margin-top: 10px;
+            transition: all 0.3s;
         }
         .btn-primary:hover {
             transform: translateY(-2px);
@@ -247,11 +324,15 @@
             background: #007bff; /* Azul para Maps */
             color: white;
         }
+        /* Dashboard Custom Styles */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 10px;
             margin-bottom: 20px;
+        }
+        .stats-grid.full {
+            grid-template-columns: 1fr; /* Ocupa a largura total para o faturamento */
         }
         .stat-card {
             background: white;
@@ -265,10 +346,38 @@
             font-weight: bold;
             color: #3d4b7a;
         }
+        .stat-number.green {
+             color: #28a745;
+        }
         .stat-label {
             color: #666;
             font-size: 12px;
             margin-top: 5px;
+        }
+        .chart-container {
+             background: #f8f9fa;
+             border: 1px solid #ddd;
+             border-radius: 10px;
+             padding: 15px;
+             margin-bottom: 20px;
+             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .chart-container h3 {
+             color: #3d4b7a;
+             font-size: 18px;
+             margin-bottom: 10px;
+        }
+        /* D3.js chart specific styles */
+        #statusChart .bar {
+            fill: #d63031;
+            transition: fill 0.3s;
+        }
+        #statusChart .bar:hover {
+             fill: #3d4b7a;
+        }
+        .axis-label {
+             font-size: 10px;
+             fill: #666;
         }
         .geladeira-badge {
             display: inline-block;
@@ -452,251 +561,438 @@
         #modalAnexo button {
             margin-top: 15px;
         }
+        /* ESTILOS DE MODAIS CUSTOMIZADOS (SUBSTITUINDO ALERT/CONFIRM) */
+        .custom-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        .custom-modal.active {
+            display: flex;
+        }
+        .custom-modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            max-width: 350px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 5px 30px rgba(0,0,0,0.4);
+        }
+        .custom-modal-content.wide {
+            max-width: 500px;
+            width: 90%; /* Ajusta a largura para ser mais responsiva */
+            text-align: left;
+        }
+        .custom-modal-content h4 {
+            color: #3d4b7a;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .custom-modal-content p {
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            flex: 1;
+        }
+        .modal-btn.primary {
+            background: #3d4b7a;
+            color: white;
+        }
+        .modal-btn.secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+        .modal-btn.danger {
+            background: #dc3545;
+            color: white;
+        }
+        /* Estilos da Tabela de Performance */
+        .performance-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .performance-table th, .performance-table td {
+            padding: 12px 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .performance-table th {
+            background-color: #f0f4f7;
+            color: #3d4b7a;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        .performance-table tr:hover {
+            background-color: #fafafa;
+        }
+        .performance-metric {
+            font-weight: bold;
+            color: #28a745;
+        }
+        /* Estilo do Rodapé */
+        .footer {
+            text-align: center;
+            padding: 15px;
+            color: rgba(255,255,255,0.8);
+            font-size: 12px;
+            margin-top: auto; /* Empurra o footer para o final */
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <button class="logout-btn" id="logoutBtn" onclick="logout()">🚪 Sair</button>
+            <button class="logout-btn" id="logoutBtn" onclick="logout()" style="display:none;">🚪 Sair</button>
             <h1>🚚 Entregas Rio Branco</h1>
             <p>Sistema de Gestão de Entregas</p>
         </div>
 
         <div class="content">
-            <div id="screenInicio" class="screen active">
-                <h2>Selecione seu Painel</h2>
-                
-                <button class="role-btn" onclick="mostrarLogin('atendimento')">
-                    📦 CRIAR ENTREGA (CAIXA)
-                </button>
-                <button class="role-btn" onclick="mostrarLogin('entregador')">
-                    🚴 ENTREGADOR
-                </button>
-                 <button class="role-btn" onclick="mostrarLogin('fiscal')">
-                    📊 GESTÃO (ADM)
-                </button>
-            </div>
-
-            <div id="screenLogin" class="screen">
-                <h2 id="loginTitulo">Login</h2>
-                
-                <div id="loginAtendimento" style="display:none;">
-                     <div class="form-group">
-                         <label>Nome do Atendente/Caixa *</label>
-                         <select id="atendenteNome"></select>
-                     </div>
-                    <div class="form-group">
-                         <label>Senha *</label>
-                         <input type="password" id="atendenteSenha" placeholder="Digite sua senha">
-                     </div>
-                     <button class="btn-primary" onclick="loginAtendimento()">Entrar →</button>
-                </div>
-                
-                <div id="loginSenha" style="display:none;">
-                    <div class="form-group">
-                        <label>Nome / Usuário</label>
-                        <select id="loginNome"></select>
-                    </div>
-                    <div class="form-group">
-                        <label>Senha</label>
-                        <input type="password" id="loginSenhaInput" placeholder="Digite sua senha">
-                    </div>
-                    <button class="btn-primary" onclick="fazerLogin()">Entrar →</button>
-                </div>
-
-                <button class="btn-voltar" onclick="voltarInicio()">← Voltar</button>
-            </div>
-
-            <div id="screenCriarEntrega" class="screen">
-                <h2>Criar Entrega</h2>
-                <form id="formEntrega">
-                    <p style="text-align: center; margin-bottom: 15px;">Operador Logado: <strong id="operadorLogado"></strong></p>
-                    
-                    <div class="form-group">
-                        <label>Caixa (Onde o pedido foi fechado) *</label>
-                        <select id="caixaSelect" required onchange="toggleOutroCaixa()">
-                            <option value="">Selecione o Caixa...</option>
-                            <option value="Caixa 1">Caixa 1</option>
-                            <option value="Caixa 2">Caixa 2</option>
-                            <option value="Caixa 3">Caixa 3</option>
-                            <option value="Outro">Outro (Explique o motivo)</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group" id="outroCaixaMotivo" style="display: none;">
-                        <label>Motivo do 'Outro' Caixa *</label>
-                        <input type="text" id="caixaMotivoInput" placeholder="Ex: Caixa 4 / Balcão">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Nome do Cliente *</label>
-                        <input type="text" id="clienteNome" required placeholder="Nome completo">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Endereço Completo *</label>
-                        <textarea id="clienteEndereco" required placeholder="Rua, número, complemento"></textarea>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Bairro *</label>
-                            <input type="text" id="clienteBairro" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Telefone *</label>
-                            <input type="tel" id="clienteTelefone" required placeholder="(66) 99999-9999">
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Geladeira? (Produtos refrigerados) *</label>
-                        <select id="temGeladeira" required>
-                            <option value="">Selecione...</option>
-                            <option value="Sim">Sim</option>
-                            <option value="Não">Não</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Status do Pagamento *</label>
-                            <select id="statusPagamento" required onchange="togglePagamentoFields()">
-                                <option value="">Selecione...</option>
-                                <option value="NÃO">💰 Cobrar na entrega</option>
-                                <option value="SIM">✅ Já Pago (Antecipado)</option>
-                            </select>
-                        </div>
-                        <div class="form-group" id="formaPagamentoGroup" style="display: none;">
-                            <label>Forma de Pagamento *</label>
-                            <select id="formaPagamento" required onchange="togglePagamentoFields()">
-                                <option value="">Selecione...</option>
-                                <option value="Dinheiro">Dinheiro</option>
-                                <option value="Pix">Pix</option>
-                                <option value="Cartão">Cartão</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group" id="trocoGroup" style="display: none;">
-                        <label>Precisa de Troco Para (R$)? *</label>
-                        <input type="text" id="valorTroco" placeholder="Valor que o entregador deve levar para troco">
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Valor Total *</label>
-                            <input type="text" id="valorTotal" required placeholder="R$ 0,00">
-                        </div>
-                        <div class="form-group">
-                            <label>Recibo/NFe</label>
-                            <input type="number" id="numeroRecibo" placeholder="Nº da NFe/Recibo (Opcional)">
-                        </div>
-                    </div>
-                    
-                    <div class="form-group" id="fotoComprovante" style="display: none;">
-                        <label>📸 Comprovante (Opcional)</label>
-                        <input type="file" id="fotoInput" accept="image/*" capture="environment" style="border: none; padding: 8px;">
-                        <div id="previewFoto" style="margin-top: 10px;"></div>
-                    </div>
-
-                    <button type="button" onclick="criarEntrega()" class="btn-primary">📤 Enviar Nova Entrega</button>
-                </form>
-                <button class="btn-voltar" onclick="logout()">← Sair</button>
-            </div>
-
-            <div id="screenEntregador" class="screen">
-                <h2>🚴 Minhas Entregas</h2>
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <p style="color: #666;">Olá, <strong id="nomeEntregador"></strong>! Entregas em rota: <span id="entregasEmRotaCount">0</span></p>
-                </div>
-                
-                <h3 style="color: #3d4b7a; margin: 20px 0 10px;">📋 Fila de Entregas (Disponíveis)</h3>
-                <div id="listaEntregasPendentes"></div>
-
-                <h3 style="color: #3d4b7a; margin: 20px 0 10px;">🚴 Em Rota (Minhas)</h3>
-                <div id="listaEntregasEmRota"></div>
-
-                <h3 style="color: #3d4b7a; margin: 20px 0 10px;">✅ Histórico de Entregas Hoje</h3>
-                <div id="listaEntregasEntregues"></div>
-
-                <button class="btn-voltar" onclick="logout()">← Sair</button>
-            </div>
-
-            <div id="screenFiscal" class="screen">
-                <h2>📊 Dashboard - Gestão</h2>
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <p style="color: #666;">Gestor: <strong id="nomeFiscal"></strong></p>
-                    <p style="color: #666;" id="dataFiscal"></p>
-                </div>
-
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-number" id="totalPendentes">0</div>
-                        <div class="stat-label">Pendentes</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="totalEmRota">0</div>
-                        <div class="stat-label">Em Rota</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="totalEntregues">0</div>
-                        <div class="stat-label">Entregues</div>
-                    </div>
-                </div>
-                
-                <button class="btn-primary" onclick="mostrarTela('screenCriarEntrega')">📦 Criar Nova Entrega</button>
-                <button class="btn-voltar" style="background: #3d4b7a;" onclick="carregarGestaoAdm()">⚙️ Gestão de Usuários</button>
-
-                <h3 style="color: #3d4b7a; margin: 20px 0 10px;">Todas as Entregas de Hoje</h3>
-                <div id="listaTodasEntregas"></div>
-
-                <button class="btn-voltar" onclick="logout()">← Sair</button>
+            <!-- Loader para esperar o Firebase --><div id="loader" style="text-align: center; padding: 50px;">
+                <h3 style="color: #3d4b7a;">Carregando dados...</h3>
+                <p>Aguarde a conexão com o banco.</p>
             </div>
             
-            <div id="screenAdmin" class="screen">
-                <h2>⚙️ Gestão de Entregadores</h2>
-                
-                <h4 style="color: #3d4b7a;">Selecione o Entregador para Gerenciar:</h4>
-                <div class="form-group">
-                    <select id="entregadorGestaoSelect" onchange="carregarDetalhesGestao()"></select>
+            <div id="appContainer" style="display:none;">
+                <div id="screenInicio" class="screen active">
+                    <h2>Selecione seu Painel</h2>
+                    
+                    <button class="role-btn" onclick="mostrarLogin('atendimento')">
+                        📦 CRIAR ENTREGA (CAIXA)
+                    </button>
+                    <button class="role-btn" onclick="mostrarLogin('entregador')">
+                        🚴 ENTREGADOR
+                    </button>
+                     <button class="role-btn" onclick="mostrarLogin('fiscal')">
+                        📊 GESTÃO (ADM)
+                    </button>
                 </div>
 
-                <div id="gestaoDetalhesContainer">
-                    <div id="gestaoCard" class="gestao-card" style="display:none;">
-                        <p>Colaborador: <strong><span id="colabGestaoNome"></span></strong></p>
-                        <p>Senha: <strong><span id="colabGestaoSenha"></span></strong></p>
-                        <h3 style="margin-top: 10px;">Pontuação Atual: <span id="colabGestaoPontos" style="color: #d63031;">0 Pts</span></h3>
+                <div id="screenLogin" class="screen">
+                    <h2 id="loginTitulo">Login</h2>
+                    
+                    <div id="loginAtendimento" style="display:none;">
+                         <div class="form-group">
+                             <label>Nome do Atendente/Caixa *</label>
+                             <select id="atendenteNome"></select>
+                         </div>
+                        <div class="form-group">
+                             <label>Senha *</label>
+                             <input type="password" id="atendenteSenha" placeholder="Digite sua senha">
+                         </div>
+                         <button class="btn-primary" onclick="loginAtendimento()">Entrar →</button>
+                    </div>
+                    
+                    <div id="loginSenha" style="display:none;">
+                        <div class="form-group">
+                            <label>Nome / Usuário</label>
+                            <select id="loginNome"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Senha</label>
+                            <input type="password" id="loginSenhaInput" placeholder="Digite sua senha">
+                        </div>
+                        <button class="btn-primary" onclick="fazerLogin()">Entrar →</button>
+                    </div>
+
+                    <button class="btn-voltar" onclick="voltarInicio()">← Voltar</button>
+                </div>
+
+                <div id="screenCriarEntrega" class="screen">
+                    <h2>Criar Entrega</h2>
+                    <form id="formEntrega">
+                        <p style="text-align: center; margin-bottom: 15px;">Operador Logado: <strong id="operadorLogado"></strong></p>
                         
-                        <div class="gestao-actions-grid">
-                            <button class="btn-add-points" onclick="ajustarPontosEntregador('adicionar')">➕ Adicionar Pontos</button>
-                            <button class="btn-remove-points" onclick="ajustarPontosEntregador('remover')">➖ Retirar Pontos</button>
-                            <button class="btn-small btn-reset-senha" onclick="resetarSenhaEntregador()">🔒 Resetar Senha</button>
-                            <button class="btn-small btn-remover-user" onclick="removerEntregadorAcao()">🗑️ Remover Usuário</button>
+                        <div class="form-group">
+                            <label>Caixa (Onde o pedido foi fechado) *</label>
+                            <select id="caixaSelect" required onchange="toggleOutroCaixa()">
+                                <option value="">Selecione o Caixa...</option>
+                                <option value="Caixa 1">Caixa 1</option>
+                                <option value="Caixa 2">Caixa 2</option>
+                                <option value="Caixa 3">Caixa 3</option>
+                                <option value="Outro">Outro (Explique o motivo)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" id="outroCaixaMotivo" style="display: none;">
+                            <label>Motivo do 'Outro' Caixa *</label>
+                            <input type="text" id="caixaMotivoInput" placeholder="Ex: Caixa 4 / Balcão">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Nome do Cliente *</label>
+                            <input type="text" id="clienteNome" required placeholder="Nome completo">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Endereço Completo *</label>
+                            <textarea id="clienteEndereco" required placeholder="Rua, número, complemento"></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Bairro *</label>
+                                <input type="text" id="clienteBairro" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Telefone *</label>
+                                <input type="tel" id="clienteTelefone" required placeholder="(66) 99999-9999">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Geladeira? (Produtos refrigerados) *</label>
+                            <select id="temGeladeira" required>
+                                <option value="">Selecione...</option>
+                                <option value="Sim">Sim</option>
+                                <option value="Não">Não</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Status do Pagamento *</label>
+                                <select id="statusPagamento" required onchange="togglePagamentoFields()">
+                                    <option value="">Selecione...</option>
+                                    <option value="NÃO">💰 Cobrar na entrega</option>
+                                    <option value="SIM">✅ Já Pago (Antecipado)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="formaPagamentoGroup" style="display: none;">
+                                <label>Forma de Pagamento *</label>
+                                <select id="formaPagamento" required onchange="togglePagamentoFields()">
+                                    <option value="">Selecione...</option>
+                                    <option value="Dinheiro">Dinheiro</option>
+                                    <option value="Pix">Pix</option>
+                                    <option value="Cartão">Cartão</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group" id="trocoGroup" style="display: none;">
+                            <label>Precisa de Troco Para (R$)? *</label>
+                            <input type="text" id="valorTroco" placeholder="Valor que o entregador deve levar para troco">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Valor Total *</label>
+                                <input type="text" id="valorTotal" required placeholder="R$ 0,00">
+                            </div>
+                            <div class="form-group">
+                                <label>Recibo/NFe</label>
+                            <input type="number" id="numeroRecibo" placeholder="Nº da NFe/Recibo (Opcional)">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" id="fotoComprovante" style="display: none;">
+                            <label>📸 Comprovante (Max: 800KB) *</label>
+                            <input type="file" id="fotoInput" accept="image/*" capture="environment" style="border: none; padding: 8px;">
+                            <div id="previewFoto" style="margin-top: 10px;"></div>
+                        </div>
+
+                        <button type="button" onclick="criarEntrega()" class="btn-primary">📤 Enviar Nova Entrega</button>
+                    </form>
+                    <button class="btn-voltar" onclick="logout()">← Sair</button>
+                </div>
+
+                <div id="screenEntregador" class="screen">
+                    <h2>🚴 Minhas Entregas</h2>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <p style="color: #666;">Olá, <strong id="nomeEntregador"></strong>! Entregas em rota: <span id="entregasEmRotaCount">0</span></p>
+                    </div>
+                    
+                    <h3 style="color: #3d4b7a; margin: 20px 0 10px;">📋 Fila de Entregas (Disponíveis)</h3>
+                    <div id="listaEntregasPendentes"></div>
+
+                    <h3 style="color: #3d4b7a; margin: 20px 0 10px;">🚴 Em Rota (Minhas)</h3>
+                    <div id="listaEntregasEmRota"></div>
+
+                    <h3 style="color: #3d4b7a; margin: 20px 0 10px;">✅ Histórico de Entregas Hoje</h3>
+                    <div id="listaEntregasEntregues"></div>
+
+                    <button class="btn-voltar" onclick="logout()">← Sair</button>
+                </div>
+
+                <div id="screenFiscal" class="screen">
+                    <h2>📊 Dashboard - Gestão</h2>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <p style="color: #666;">Gestor: <strong id="nomeFiscal"></strong></p>
+                        <p style="color: #666;" id="dataFiscal"></p>
+                    </div>
+                    
+                    <!-- NOVO: FILTRO DE DATAS --><h4 style="color: #d63031;">Filtro de Período</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Data Inicial:</label>
+                            <input type="date" id="dataInicial" onchange="setupFirestoreListener()">
+                        </div>
+                        <div class="form-group">
+                            <label>Data Final:</label>
+                            <input type="date" id="dataFinal" onchange="setupFirestoreListener()">
                         </div>
                     </div>
                     
-                    <h4 style="color: #3d4b7a; margin: 20px 0 10px;">Lista de Entregadores</h4>
-                    <div id="listaEntregadoresAdm"></div>
-                </div>
+                    <!-- Cartão de Faturamento --><div class="stats-grid full">
+                        <div class="stat-card" style="border-color: #28a745;">
+                            <div class="stat-number green" id="totalArrecadado">R$ 0,00</div>
+                            <div class="stat-label">Valor Total das Entregas Finalizadas no Período</div>
+                        </div>
+                    </div>
 
-                <h4 style="color: #3d4b7a;">➕ Adicionar Novo Entregador</h4>
-                <div class="form-group">
-                    <input type="text" id="novoEntregadorNome" placeholder="Nome do Entregador">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalPendentes">0</div>
+                            <div class="stat-label">Pendentes</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalEmRota">0</div>
+                            <div class="stat-label">Em Rota</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalEntregues">0</div>
+                            <div class="stat-label">Entregues (Sucesso)</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Gráfico de Status --><div class="chart-container">
+                        <h3>Distribuição de Entregas por Status</h3>
+                        <div id="statusChart"></div>
+                    </div>
+                    
+                    <!-- BOTÃO PARA PERFORMANCE DE ENTREGADORES --><button class="btn-primary" onclick="mostrarPerformanceEntregadores()">🚴 Performance por Entregador</button>
+                    <button class="btn-primary" onclick="mostrarTela('screenCriarEntrega')">📦 Criar Nova Entrega</button>
+                    <button class="btn-voltar" style="background: #3d4b7a;" onclick="carregarGestaoAdm()">⚙️ Gestão de Usuários</button>
+
+                    <h3 style="color: #3d4b7a; margin: 20px 0 10px;">Todas as Entregas no Período</h3>
+                    <div id="listaTodasEntregas"></div>
+
+                    <button class="btn-voltar" onclick="logout()">← Sair</button>
                 </div>
-                <div class="form-group">
-                    <input type="password" id="novoEntregadorSenha" placeholder="Senha">
+                
+                <!-- NOVO: TELA DE PERFORMANCE DO ENTREGADOR --><div id="screenPerformance" class="screen">
+                    <h2>🏆 Performance dos Entregadores</h2>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <p style="color: #666;" id="performancePeriodo"></p>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <h3>Métricas de Entrega</h3>
+                        <div id="performanceList">
+                            <!-- Tabela de performance será renderizada aqui --><table class="performance-table">
+                                <thead>
+                                    <tr>
+                                        <th>Entregador</th>
+                                        <th>Atribuídas</th>
+                                        <th>Entregues</th>
+                                        <th>Sucesso (%)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="performanceBody">
+                                    <tr><td colspan="4" style="text-align: center;">Carregando dados...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <button class="btn-voltar" onclick="irParaDashboardFiscal()">← Voltar ao Dashboard</button>
                 </div>
-                <div class="form-group">
-                    <input type="tel" id="novoEntregadorTelefone" placeholder="Telefone (opcional)">
-                </div>
-                <button class="btn-primary" onclick="adicionarEntregador()">Adicionar</button>
+                
+                <!-- TELA DE GESTÃO DE USUÁRIOS (ADM) --><div id="screenAdmin" class="screen">
+                    <h2>⚙️ Gestão de Entregadores</h2>
+                    
+                    <h4 style="color: #3d4b7a;">Selecione o Entregador para Gerenciar:</h4>
+                    <div class="form-group">
+                        <select id="entregadorGestaoSelect" onchange="carregarDetalhesGestao()"></select>
+                    </div>
+
+                    <div id="gestaoDetalhesContainer">
+                        <div id="gestaoCard" class="gestao-card" style="display:none;">
+                            <p>Colaborador: <strong><span id="colabGestaoNome"></span></strong></p>
+                            <p>Senha: <strong><span id="colabGestaoSenha"></span></strong></p>
+                            <h3 style="margin-top: 10px;">Pontuação Atual: <span id="colabGestaoPontos" style="color: #d63031;">0 Pts</span></h3>
+                            
+                            <div class="gestao-actions-grid">
+                                <button class="btn-add-points" onclick="ajustarPontosEntregador('adicionar')">➕ Adicionar Pontos</button>
+                                <button class="btn-remove-points" onclick="ajustarPontosEntregador('remover')">➖ Retirar Pontos</button>
+                                <button class="btn-small btn-reset-senha" onclick="resetarSenhaEntregador()">🔒 Resetar Senha</button>
+                                <button class="btn-small btn-remover-user" onclick="removerEntregadorAcao()">🗑️ Remover Usuário</button>
+                            </div>
+                        </div>
+                        
+                        <h4 style="color: #3d4b7a; margin: 20px 0 10px;">Lista de Entregadores</h4>
+                        <div id="listaEntregadoresAdm"></div>
+                    </div>
+
+                    <h4 style="color: #3d4b7a;">➕ Adicionar Novo Entregador</h4>
+                    <div class="form-group">
+                        <input type="text" id="novoEntregadorNome" placeholder="Nome do Entregador">
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="novoEntregadorSenha" placeholder="Senha">
+                    </div>
+                    <div class="form-group">
+                        <input type="tel" id="novoEntregadorTelefone" placeholder="Telefone (opcional)">
+                    </div>
+                    <button class="btn-primary" onclick="adicionarEntregador()">Adicionar</button>
 
 
-                <button class="btn-voltar" onclick="irParaDashboardFiscal()">← Voltar</button>
+                    <button class="btn-voltar" onclick="irParaDashboardFiscal()">← Voltar</button>
+                </div>
             </div>
         </div>
     </div>
+    
+    <!-- MODAL DE MENSAGENS E CONFIRMAÇÃO (NOVO) --><div id="customModal" class="custom-modal">
+        <div class="custom-modal-content">
+            <h4 id="modalTitle"></h4>
+            <p id="modalMessage"></p>
+            <div id="modalButtons" class="modal-buttons">
+                <!-- Buttons are inserted here by showMessageBox or showConfirmBox --></div>
+        </div>
+    </div>
+    
+    <!-- NOVO MODAL PARA CANCELAMENTO E FALHA --><div id="modalCancelamento" class="custom-modal">
+        <div class="custom-modal-content wide">
+            <h4 id="modalCancelTitle"></h4>
+            <div class="form-group">
+                <label for="motivoCancelamentoInput">Motivo do Cancelamento/Falha *</label>
+                <input type="text" id="motivoCancelamentoInput" placeholder="Ex: Cliente ausente / Endereço incorreto" required>
+            </div>
+            <div class="form-group">
+                <label for="obsCancelamentoTextarea">Observações Adicionais (Opcional)</label>
+                <textarea id="obsCancelamentoTextarea" placeholder="Detalhes importantes para o fiscal..."></textarea>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn secondary" onclick="fecharModalCancelamento()">↩️ Cancelar</button>
+                <button class="modal-btn danger" id="btnConfirmarCancelamento">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
 
     <div id="modalDetalhes" class="detalhes-modal">
         <div class="detalhes-content">
@@ -707,7 +1003,7 @@
     
     <div id="modalAnexo" class="detalhes-modal">
         <div class="detalhes-content">
-            <h3 style="color: #3d4b7a;">📸 Anexar Comprovante (Pix/Cartão)</h3>
+            <h3 style="color: #3d4b7a;">📸 Anexar Comprovante (Max: 800KB)</h3>
             <p style="margin-bottom: 15px; color: #d63031;">Necessário para finalizar a entrega.</p>
             
             <input type="file" id="anexoInputEntregador" accept="image/*" capture="environment">
@@ -722,9 +1018,16 @@
         </div>
     </div>
 
+    <!-- NOVO RODAPÉ --><div class="footer">
+        © 2025 AutoVizion. Todos os direitos reservados. Soluções inteligentes em automação e marketing digital.
+    </div>
+
     <script>
-        // DADOS E CONSTANTES
+        // DADOS E CONSTANTES GLOBAIS
         
+        // Limite de tamanho de imagem em bytes (800KB)
+        const MAX_IMAGE_SIZE_BYTES = 800 * 1024; 
+
         // Fiscais/Gestores (Com senha)
         let GESTORES = {
             'Cadu': { senha: '1228' },
@@ -756,12 +1059,63 @@
         let tipoLoginAtual = null;
         let fotoComprovante = null; // Comprovante do Caixa (upload antecipado)
         let entregadorEmGestao = null; // Usuário do entregador selecionado no Painel ADM
-        let entregaParaFinalizarId = null; // ID da entrega em processamento no modal de anexo
+        let entregaParaFinalizarId = null; // ID do documento da entrega em processamento no modal de anexo
+        let todasEntregas = []; // Array que armazena os dados do Firestore
         
         const SENHA_RESET = 'RB@ENTREGA'; // Nova senha padrão para reset
         const ORIGEM_MAPS = 'Supermercado Rio Branco, Garça, SP, Brasil'; // Ponto de origem padrão para rotas
 
-        // FUNÇÕES DE UTILIDADE E FORMATAÇÃO
+        // Variável auxiliar para o modal de cancelamento/falha
+        let acaoCancelamentoDocId = null;
+        let acaoCancelamentoTipo = null; // 'cancelada' ou 'falha'
+
+
+        // Firestore helpers (acessíveis após a inicialização do módulo)
+        let collection, query, addDoc, updateDoc, doc, onSnapshot, serverTimestamp, where;
+        
+        // --- FUNÇÕES DE MODAL CUSTOMIZADO (Substituindo alert() e confirm()) ---
+        const customModal = document.getElementById('customModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalButtons = document.getElementById('modalButtons');
+
+        function showMessageBox(title, message) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modalButtons.innerHTML = `<button class="modal-btn primary" onclick="customModal.classList.remove('active')">OK</button>`;
+            customModal.classList.add('active');
+        }
+
+        // Retorna uma Promise que resolve para true (OK/Sim) ou false (Cancelar/Não)
+        function showConfirmBox(title, message, onConfirm, onCancel = null) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modalButtons.innerHTML = `
+                <button class="modal-btn secondary" id="confirmCancel">Cancelar</button>
+                <button class="modal-btn primary" id="confirmOk">Sim</button>
+            `;
+            customModal.classList.add('active');
+
+            document.getElementById('confirmOk').onclick = () => {
+                customModal.classList.remove('active');
+                if (onConfirm) onConfirm();
+            };
+            document.getElementById('confirmCancel').onclick = () => {
+                customModal.classList.remove('active');
+                if (onCancel) onCancel();
+            };
+        }
+
+
+        // Caminho da coleção de entregas (MIGRADO PARA PUBLIC)
+        function getEntregasCollectionRef() {
+            const db = window.db;
+            const appId = window.appId;
+            // Coleção PÚBLICA (compartilhada): /artifacts/{appId}/public/data/entregas
+            return collection(db, 'artifacts', appId, 'public', 'data', 'entregas');
+        }
+
+        // --- FUNÇÕES DE UTILIDADE E FORMATAÇÃO (MANTIDAS) ---
         function formatarTelefone(telefone) {
             if (!telefone) return '';
             const nums = String(telefone).replace(/\D/g, '');
@@ -784,34 +1138,47 @@
         function limparMoeda(valor) {
              if (!valor) return 0;
              const valorString = String(valor);
-             return parseFloat(valorString.replace('R$', '').replace(/\s/g, '').replace(',', '.'));
+             // Remove R$, espaços e substitui vírgula por ponto para obter um float
+             return parseFloat(valorString.replace(/[R$ ]/g, '').replace(',', '.'));
         }
 
-        function obterEntregasHoje() {
-            const todasEntregas = JSON.parse(localStorage.getItem('entregas') || '[]');
+        // MUDANÇA: Agora filtra o array global, que já foi carregado pelo onSnapshot (com filtro de datas)
+        function obterEntregasFiltradas() {
+            // Se o usuário não for entregador, retorna todas as entregas já filtradas pelo Firestore
+            if (tipoUsuario !== 'entregador') {
+                return todasEntregas;
+            }
+            
+            // Se for entregador, filtra apenas as entregas do dia (mantendo a lógica original)
             const hoje = new Date().toLocaleDateString('pt-BR');
-            return todasEntregas.filter(e => e.data === hoje);
+            // Nota: O filtro de data do dashboard não afeta a tela do entregador
+            return todasEntregas.filter(e => e.data === hoje); 
         }
         
         function salvarEntregadores() {
+             // Salva no localStorage, mantendo a originalidade do código para esta parte
              localStorage.setItem('ENTREGADORES', JSON.stringify(ENTREGADORES));
-             localStorage.setItem('ATENDENTES', JSON.stringify(ATENDENTES)); // Salva a nova estrutura
+             localStorage.setItem('ATENDENTES', JSON.stringify(ATENDENTES)); 
         }
 
-        // --- GOOGLE MAPS ---
+        // --- GOOGLE MAPS (COPIAR LINK) ---
         function abrirNoMaps(endereco, bairro) {
-            // Constrói a query completa de destino, forçando o contexto da cidade/estado
             const destino = `${endereco}, ${bairro}, Garça, SP, Brasil`; 
-            
-            // Corrige a URL para usar a origem da loja
             const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(ORIGEM_MAPS)}&destination=${encodeURIComponent(destino)}&travelmode=driving`;
+            
+            // NOVO: Copia a URL para a área de transferência
+            const tempInput = document.createElement('textarea');
+            tempInput.value = mapsUrl;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy'); // Usa execCommand para compatibilidade
+            document.body.removeChild(tempInput);
 
-            // Abre o URL em uma nova aba/janela, que tentará abrir no app
-            window.open(mapsUrl, '_blank');
+            showMessageBox('🗺️ Link Copiado!', 'O link de navegação do Maps foi copiado para a área de transferência. Cole em seu navegador ou abra o app de Maps.');
         }
 
 
-        // --- MÓDULO DE ADM (GESTÃO DE USUÁRIOS/PONTOS) ---
+        // --- MÓDULO DE ADM (GESTÃO DE USUÁRIOS/PONTOS - mantido local) ---
         
         function carregarGestaoAdm() {
             if (tipoUsuario !== 'fiscal') {
@@ -853,15 +1220,17 @@
             const isAdd = acao === 'adicionar';
             const acaoDisplay = isAdd ? 'ADICIONAR' : 'RETIRAR';
 
-            const pontosStr = prompt(`Digite a quantidade de pontos que deseja ${acaoDisplay} para ${user}:`);
+            // Substituindo prompt()
+            const pontosStr = window.prompt(`Digite a quantidade de pontos que deseja ${acaoDisplay} para ${user}:`);
             if (pontosStr === null) return;
             
             const pontos = parseInt(pontosStr);
 
-            if (isNaN(pontos) || pontos <= 0) { alert('❌ Pontuação inválida!'); return; }
+            if (isNaN(pontos) || pontos <= 0) { showMessageBox('❌ Erro', 'Pontuação inválida!'); return; }
 
-            const motivo = prompt(`Digite o MOTIVO para ${acaoDisplay} ${pontos} pontos de ${user} (Obrigatório):`);
-            if (!motivo || motivo.trim() === '') { alert('Motivo obrigatório. Ação cancelada.'); return; }
+            // Substituindo prompt()
+            const motivo = window.prompt(`Digite o MOTIVO para ${acaoDisplay} ${pontos} pontos de ${user} (Obrigatório):`);
+            if (!motivo || motivo.trim() === '') { showMessageBox('⚠️ Alerta', 'Motivo obrigatório. Ação cancelada.'); return; }
 
             const ajustePontos = isAdd ? pontos : -pontos;
             
@@ -877,28 +1246,26 @@
             
             salvarEntregadores();
             carregarDetalhesGestao();
-            alert(`✅ ${pontos} Pontos ${isAdd ? 'adicionados' : 'removidos'} de ${user}.`);
+            showMessageBox('✅ Sucesso', `${pontos} Pontos ${isAdd ? 'adicionados' : 'removidos'} de ${user}.`);
         }
 
         function resetarSenhaEntregador() {
-             if (confirm(`⚠️ Para resetar a senha de "${entregadorEmGestao}" para a padrão ${SENHA_RESET}, digite "RESET":`)) {
-                 
+             showConfirmBox(`⚠️ Confirmação de Reset`, `Para resetar a senha de "${entregadorEmGestao}" para a padrão ${SENHA_RESET}, clique em Sim.`, () => {
                  ENTREGADORES[entregadorEmGestao].senha = SENHA_RESET;
                  salvarEntregadores();
-                 
-                 alert(`✅ Senha de "${entregadorEmGestao}" resetada para ${SENHA_RESET}.`);
+                 showMessageBox('✅ Sucesso', `Senha de "${entregadorEmGestao}" resetada para ${SENHA_RESET}.`);
                  carregarDetalhesGestao();
-            }
+            });
         }
         
         function removerEntregadorAcao() {
-            if (confirm(`⚠️ Tem certeza que deseja remover permanentemente o entregador ${entregadorEmGestao}?`)) {
+            showConfirmBox('⚠️ Confirmação', `Tem certeza que deseja remover permanentemente o entregador ${entregadorEmGestao}?`, () => {
                 delete ENTREGADORES[entregadorEmGestao];
                 salvarEntregadores();
-                alert(`Entregador ${entregadorEmGestao} removido.`);
+                showMessageBox('✅ Sucesso', `Entregador ${entregadorEmGestao} removido.`);
                 entregadorEmGestao = null;
                 carregarGestaoAdm(); // Volta para a lista principal
-            }
+            });
         }
 
         function carregarListaEntregadoresAdm() {
@@ -927,29 +1294,30 @@
             const telefone = document.getElementById('novoEntregadorTelefone').value.trim().replace(/\D/g, '');
 
             if (!nome || !senha || senha.length < 4) {
-                alert('Nome e senha (mínimo 4 caracteres) são obrigatórios.');
+                showMessageBox('⚠️ Erro', 'Nome e senha (mínimo 4 caracteres) são obrigatórios.');
                 return;
             }
 
             if (ENTREGADORES[nome]) {
-                alert(`Entregador ${nome} já existe.`);
+                showMessageBox('⚠️ Erro', `Entregador ${nome} já existe.`);
                 return;
             }
 
             ENTREGADORES[nome] = { senha: senha, telefone: telefone, pontos: 0, historicoPontos: [] };
             salvarEntregadores();
 
-            alert(`Entregador ${nome} adicionado com sucesso!`);
+            showMessageBox('✅ Sucesso', `Entregador ${nome} adicionado com sucesso!`);
             document.getElementById('novoEntregadorNome').value = '';
             document.getElementById('novoEntregadorSenha').value = '';
             document.getElementById('novoEntregadorTelefone').value = '';
             carregarGestaoAdm(); // Recarrega a tela ADM
         }
 
-        // --- FUNÇÕES DE AÇÃO DO MÓDULO (CRUD ENTREGA) ---
+        // --- FUNÇÕES DE AÇÃO DO MÓDULO (CRUD ENTREGA - FIREBASE) ---
         
         // Função para mostrar/esconder campos de troco e comprovante
         function togglePagamentoFields() {
+             // ... (Função idêntica à original)
             let forma = document.getElementById('formaPagamento').value;
             let status = document.getElementById('statusPagamento').value;
             let trocoGroup = document.getElementById('trocoGroup');
@@ -981,12 +1349,13 @@
                  fotoComprovante.style.display = 'none';
                  document.getElementById('fotoInput').value = '';
                  document.getElementById('previewFoto').innerHTML = '';
-                 fotoComprovante = null;
+                 window.fotoComprovante = null; // Usa window.fotoComprovante
             }
         }
 
 
         function toggleOutroCaixa() {
+            // ... (Função idêntica à original)
             const caixa = document.getElementById('caixaSelect').value;
             const outroMotivoGroup = document.getElementById('outroCaixaMotivo');
             
@@ -997,15 +1366,36 @@
                 document.getElementById('caixaMotivoInput').value = '';
             }
         }
+        
+        // NOVO: Função para validar e carregar a imagem em base64
+        function handleImageUpload(file, callback) {
+            if (file) {
+                if (file.size > MAX_IMAGE_SIZE_BYTES) {
+                    showMessageBox('⚠️ Erro de Imagem', `O arquivo excede o limite de ${MAX_IMAGE_SIZE_BYTES / 1024}KB.`);
+                    callback(null);
+                    return;
+                }
 
-        function criarEntrega() {
-            // O operador Caixa é o usuário logado (ATENDIMENTO/CAIXA)
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    callback(e.target.result); // Retorna o base64
+                };
+                reader.onerror = function() {
+                    console.error("Erro ao ler arquivo.");
+                    showMessageBox('❌ Erro', "Não foi possível ler o arquivo de imagem.");
+                    callback(null);
+                };
+                reader.readAsDataURL(file);
+            } else {
+                callback(null);
+            }
+        }
+
+        async function criarEntrega() {
             const operadorCaixa = usuarioLogado; 
-            
             const caixaSelect = document.getElementById('caixaSelect').value; 
             const caixaMotivo = document.getElementById('caixaMotivoInput').value.trim();
             const caixa = caixaSelect === 'Outro' ? `Outro: ${caixaMotivo}` : caixaSelect;
-
             const nome = document.getElementById('clienteNome').value.trim();
             const endereco = document.getElementById('clienteEndereco').value.trim();
             const bairro = document.getElementById('clienteBairro').value.trim();
@@ -1020,32 +1410,35 @@
             
             // Validações
             if (!caixa || !nome || !endereco || !bairro || telefone.length < 10 || !geladeira || !status || !valor) {
-                alert('⚠️ Por favor, preencha todos os campos obrigatórios corretamente!');
+                showMessageBox('⚠️ Erro', 'Por favor, preencha todos os campos obrigatórios corretamente!');
                 return;
             }
             if (caixaSelect === 'Outro' && !caixaMotivo) {
-                 alert('⚠️ Por favor, explique o motivo do "Outro" caixa.');
+                 showMessageBox('⚠️ Erro', 'Por favor, explique o motivo do "Outro" caixa.');
                  return;
             }
-            
-            // Validações de Pagamento e Forma
             if (status === 'NÃO' && !forma) {
-                 alert('⚠️ Selecione a Forma de Pagamento (Dinheiro, Pix, Cartão) para a cobrança.');
+                 showMessageBox('⚠️ Erro', 'Selecione a Forma de Pagamento (Dinheiro, Pix, Cartão) para a cobrança.');
                  return;
             }
             
             if (forma === 'Dinheiro' && status === 'NÃO' && (!troco || limparMoeda(troco) <= 0 || limparMoeda(troco) <= limparMoeda(valor))) {
-                 alert('⚠️ Para Dinheiro (Cobrar na entrega), você deve especificar o valor de troco necessário (maior que o valor total).');
+                 showMessageBox('⚠️ Erro', 'Para Dinheiro (Cobrar na entrega), você deve especificar o valor de troco necessário (maior que o valor total).');
                  return;
             }
             if (status === 'SIM' && !forma) {
-                 alert('⚠️ Selecione a Forma de Pagamento utilizada (Pix, Cartão, Dinheiro).');
+                 showMessageBox('⚠️ Erro', 'Selecione a Forma de Pagamento utilizada (Pix, Cartão, Dinheiro).');
                  return;
+            }
+
+            // Validação de Comprovante: Se Pix/Cartão e JÁ PAGO, o comprovante é necessário
+            if ((forma === 'Pix' || forma === 'Cartão') && status === 'SIM' && !window.fotoComprovante) {
+                showMessageBox('⚠️ Erro', 'Obrigatório anexar o comprovante para pagamentos PIX/Cartão antecipados.');
+                return;
             }
 
 
             const entrega = {
-                id: Date.now(),
                 clienteNome: nome,
                 endereco: endereco,
                 bairro: bairro,
@@ -1054,15 +1447,16 @@
                 pagamento: forma,
                 jaPago: status,
                 valor: formatarMoeda(valor), 
+                valorNumerico: limparMoeda(valor), 
                 troco: (forma === 'Dinheiro' && status === 'NÃO' && troco) ? formatarMoeda(troco) : 'Não',
                 recibo: recibo || 'Não Informado',
-                caixa: caixa, // Caixa selecionado (Caixa 1, 2, 3, Outro: Motivo)
-                operadorCaixa: operadorCaixa, // O nome do atendente logado
-                comprovante: fotoComprovante,
+                caixa: caixa, 
+                operadorCaixa: operadorCaixa, 
+                comprovante: window.fotoComprovante || null, // Usa o base64 (agora validado)
                 status: 'pendente',
                 criadoPor: operadorCaixa, 
-                criadoEm: new Date().toISOString(),
-                data: new Date().toLocaleDateString('pt-BR'),
+                criadoEm: serverTimestamp(), 
+                data: new Date().toLocaleDateString('pt-BR'), 
                 entregador: null,
                 saiuEm: null,
                 finalizadoEm: null,
@@ -1071,137 +1465,136 @@
                 comprovanteEntregador: null
             };
 
-            let entregas = JSON.parse(localStorage.getItem('entregas') || '[]');
-            entregas.push(entrega);
-            localStorage.setItem('entregas', JSON.stringify(entregas));
+            try {
+                await addDoc(getEntregasCollectionRef(), entrega);
 
-            const statusPagamento = entrega.jaPago === 'SIM' ? '✅ JÁ PAGO' : '💰 COBRAR';
-            alert(`✅ Entrega criada com sucesso!\n\nCliente: ${entrega.clienteNome}\nValor: ${entrega.valor}\nStatus: ${statusPagamento}`);
+                const statusPagamento = entrega.jaPago === 'SIM' ? '✅ JÁ PAGO' : '💰 COBRAR';
+                showMessageBox('✅ Sucesso', `Entrega criada com sucesso!\n\nCliente: ${entrega.clienteNome}\nValor: ${entrega.valor}\nStatus: ${statusPagamento}`);
 
-            // Limpar campos
-            document.getElementById('formEntrega').reset();
-            document.getElementById('caixaSelect').value = ''; 
-            document.getElementById('outroCaixaMotivo').style.display = 'none';
-            document.getElementById('caixaMotivoInput').value = '';
-            document.getElementById('clienteNome').value = '';
-            document.getElementById('clienteEndereco').value = '';
-            document.getElementById('clienteBairro').value = '';
-            document.getElementById('clienteTelefone').value = '';
-            document.getElementById('temGeladeira').value = '';
-            document.getElementById('statusPagamento').value = '';
-            document.getElementById('formaPagamento').value = '';
-            document.getElementById('valorTotal').value = '';
-            document.getElementById('numeroRecibo').value = '';
-            document.getElementById('fotoComprovante').style.display = 'none';
-            document.getElementById('previewFoto').innerHTML = '';
-            document.getElementById('valorTroco').value = '';
-            document.getElementById('trocoGroup').style.display = 'none';
-            document.getElementById('formaPagamentoGroup').style.display = 'none';
-            fotoComprovante = null;
-        }
+                // Limpar campos
+                document.getElementById('formEntrega').reset();
+                document.getElementById('outroCaixaMotivo').style.display = 'none';
+                document.getElementById('fotoComprovante').style.display = 'none';
+                document.getElementById('previewFoto').innerHTML = '';
+                document.getElementById('trocoGroup').style.display = 'none';
+                document.getElementById('formaPagamentoGroup').style.display = 'none';
+                window.fotoComprovante = null; 
 
-        function atualizarEntrega(id, updates) {
-            let entregas = JSON.parse(localStorage.getItem('entregas') || '[]');
-            const index = entregas.findIndex(e => e.id == id);
-            
-            if (index !== -1) {
-                entregas[index] = { ...entregas[index], ...updates };
-                localStorage.setItem('entregas', JSON.stringify(entregas));
-                // Recarrega as listas após a atualização
-                if (tipoUsuario === 'entregador') carregarEntregasEntregador();
-                if (tipoUsuario === 'fiscal') carregarDashboardFiscal();
-                return true;
+            } catch (error) {
+                console.error("Erro ao salvar entrega no Firestore:", error);
+                showMessageBox('❌ Erro', "Erro ao salvar entrega. Verifique o console.");
             }
-            return false;
         }
 
-        function pegarEntrega(id) {
-            const entregasEmRota = obterEntregasHoje().filter(e => e.entregador === usuarioLogado && e.status === 'em rota').length;
+        async function atualizarEntrega(docId, updates) {
+            try {
+                const docRef = doc(window.db, getEntregasCollectionRef().path, docId);
+                await updateDoc(docRef, updates);
+                return true; 
+            } catch (error) {
+                console.error("Erro ao atualizar entrega:", error);
+                // MUDANÇA: Aviso específico para o erro de limite de tamanho do Firestore
+                if (error.message.includes('longer than 1048576 bytes')) {
+                    showMessageBox('❌ Erro de Limite', 'A imagem do comprovante é muito grande. Por favor, use um arquivo menor que 800KB.');
+                } else {
+                    showMessageBox('❌ Erro', "Erro ao atualizar entrega. Verifique o console.");
+                }
+                return false;
+            }
+        }
+
+        function pegarEntrega(docId) {
+            const entregasHoje = obterEntregasFiltradas();
+            // Filtra as entregas 'em rota' do entregador (assumindo que todasEntregas tem os dados corretos para o dia/período)
+            const emRotaDoUsuario = entregasHoje.filter(e => e.entregador === usuarioLogado && e.status === 'em rota');
             
-            if (entregasEmRota >= 5) {
-                alert('🚫 Você já possui 5 entregas em rota. Finalize algumas antes de pegar mais.');
+            if (emRotaDoUsuario.length >= 5) {
+                showMessageBox('🚫 Limite Atingido', 'Você já possui 5 entregas em rota. Finalize algumas antes de pegar mais.');
                 return;
             }
 
-            if (confirm(`Deseja realmente pegar esta entrega? Ela será atribuída a ${usuarioLogado}.`)) {
-                if (atualizarEntrega(id, { status: 'em rota', entregador: usuarioLogado, saiuEm: new Date().toISOString() })) {
-                    alert('Entrega atribuída! Boa rota!');
+            showConfirmBox('Confirmação', `Deseja realmente pegar esta entrega? Ela será atribuída a ${usuarioLogado}.`, () => {
+                if (atualizarEntrega(docId, { 
+                    status: 'em rota', 
+                    entregador: usuarioLogado, 
+                    saiuEm: serverTimestamp() 
+                })) {
+                    showMessageBox('✅ Sucesso', 'Entrega atribuída! Boa rota!');
                 }
-            }
+            });
         }
         
-        function falhaEntregaAcao(id) {
-            const motivo = prompt('⚠️ Digite o motivo da FALHA na entrega (obrigatório):');
-            if (motivo && motivo.trim() !== '') {
-                const observacao = prompt('Observações adicionais (opcional):');
-                if (atualizarEntrega(id, { 
-                    status: 'falha', 
-                    motivoFalha: motivo, 
-                    observacao: observacao,
-                    finalizadoEm: new Date().toISOString() 
-                })) {
-                    alert('Entrega registrada como FALHA. O Fiscal será notificado.');
-                }
-            } else {
-                alert('Motivo da falha é obrigatório. Ação cancelada.');
-            }
+        // NOVO: Abre o modal para Falha
+        function falhaEntregaAcao(docId) {
+            acaoCancelamentoDocId = docId;
+            acaoCancelamentoTipo = 'falha';
+            
+            const btnConfirmar = document.getElementById('btnConfirmarCancelamento');
+            btnConfirmar.onclick = confirmarModalCancelamento;
+            btnConfirmar.textContent = 'Registrar Falha';
+            btnConfirmar.classList.remove('danger');
+            btnConfirmar.classList.add('btn-falha'); // Reutiliza o estilo de falha
+            
+            document.getElementById('modalCancelTitle').textContent = '⚠️ Registrar Falha na Entrega';
+            document.getElementById('motivoCancelamentoInput').value = '';
+            document.getElementById('obsCancelamentoTextarea').value = '';
+            document.getElementById('modalCancelamento').classList.add('active');
         }
 
-        function finalizarEntrega(id) {
-             const entrega = obterEntregasHoje().find(e => e.id == id);
-             if (!entrega) return alert('Entrega não encontrada!');
+        function finalizarEntrega(docId) {
+             const entrega = todasEntregas.find(e => e.docId == docId);
+             if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
 
-             // 1. Confirmação de cobrança
              if (entrega.jaPago === 'NÃO') {
-                 if (!confirm(`🚨 ATENÇÃO: Confirma que o valor ${entrega.valor} foi cobrado do cliente?`)) {
-                     return;
-                 }
+                 showConfirmBox('🚨 Cobrança Pendente', `Confirma que o valor ${entrega.valor} foi cobrado do cliente?`, () => {
+                     continuarFinalizarEntrega(docId, entrega);
+                 });
+                 return; 
              }
-
-             // 2. Coleta de Comprovante (OBRIGATÓRIO para Pix/Cartão)
+             
+             continuarFinalizarEntrega(docId, entrega);
+        }
+        
+        function continuarFinalizarEntrega(docId, entrega) {
              if (entrega.pagamento === 'Pix' || entrega.pagamento === 'Cartão') {
-                 entregaParaFinalizarId = id;
-                 // Reseta o input de arquivo antes de abrir o modal
+                 window.entregaParaFinalizarId = docId; 
                  document.getElementById('anexoInputEntregador').value = '';
                  document.getElementById('obsAnexoEntregador').value = '';
                  document.getElementById('modalAnexo').classList.add('active');
                  
-                 // A finalização será completada pela função confirmarAnexo()
                  return; 
              }
 
-             // 3. Coleta de Observações (Se não for Pix/Cartão)
-             const obs = prompt('Observação da entrega (ex: Entregue ao vizinho, Deixado na caixa de correio). (Opcional):');
+             const obs = window.prompt('Observação da entrega (ex: Entregue ao vizinho, Deixado na caixa de correio). (Opcional):');
+             
              const updates = {
                  status: 'entregue', 
-                 finalizadoEm: new Date().toISOString(),
+                 finalizadoEm: serverTimestamp(),
                  observacao: obs,
                  comprovanteEntregador: 'Não aplicável'
              };
 
-
-             // 4. Finalização
-             if (atualizarEntrega(id, updates)) {
-                 alert('Entrega finalizada com sucesso!');
+             if (atualizarEntrega(docId, updates)) {
+                 showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso!');
              }
         }
         
-        function abrirModalAnexo(id) {
-            const entrega = obterEntregasHoje().find(e => e.id == id);
-            if (!entrega) return alert('Entrega não encontrada!');
+        function abrirModalAnexo(docId) {
+            const entrega = todasEntregas.find(e => e.docId == docId);
+            if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
             if (entrega.pagamento !== 'Pix' && entrega.pagamento !== 'Cartão') {
-                alert('📸 O comprovante é obrigatório apenas para entregas com pagamento em Pix ou Cartão.');
+                showMessageBox('📸 Alerta', 'O comprovante é obrigatório apenas para entregas com pagamento em Pix ou Cartão.');
                 return;
             }
-            entregaParaFinalizarId = id;
+            window.entregaParaFinalizarId = docId;
             document.getElementById('anexoInputEntregador').value = '';
             document.getElementById('obsAnexoEntregador').value = '';
             document.getElementById('modalAnexo').classList.add('active');
         }
 
         function confirmarAnexo() {
-            const id = entregaParaFinalizarId;
-            const entrega = obterEntregasHoje().find(e => e.id == id);
+            const docId = window.entregaParaFinalizarId;
+            const entrega = todasEntregas.find(e => e.docId == docId);
             
             const fileInput = document.getElementById('anexoInputEntregador');
             const file = fileInput.files[0];
@@ -1209,37 +1602,33 @@
             
             if (entrega.pagamento === 'Pix' || entrega.pagamento === 'Cartão') {
                 if (!file) {
-                    alert('⚠️ Anexo do comprovante é obrigatório para Pix/Cartão. Por favor, anexe a foto.');
+                    showMessageBox('⚠️ Erro', 'Anexo do comprovante é obrigatório para Pix/Cartão. Por favor, anexe a foto.');
                     return;
                 }
                 
-                // Simula o upload lendo o arquivo como URL base64
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    const comprovante = event.target.result;
-                    
-                    // Finaliza a entrega com o anexo lido
-                    finalizarEntregaComAnexo(id, comprovante, obs);
-                    fecharModalAnexo();
-                };
-                reader.readAsDataURL(file);
-                
+                // NOVO: Usa a função de validação de tamanho antes de finalizar
+                handleImageUpload(file, (comprovante) => {
+                    if (comprovante) {
+                        finalizarEntregaComAnexo(docId, comprovante, obs);
+                        fecharModalAnexo();
+                    }
+                });
+
             } else {
-                 // Caso o pagamento não fosse Pix/Cartão (fallback)
-                 finalizarEntregaComAnexo(id, 'N/A', obs);
+                 finalizarEntregaComAnexo(docId, 'N/A', obs);
                  fecharModalAnexo();
             }
         }
 
-        function finalizarEntregaComAnexo(id, comprovante, obs) {
+        function finalizarEntregaComAnexo(docId, comprovante, obs) {
              const updates = {
                  status: 'entregue', 
-                 finalizadoEm: new Date().toISOString(),
+                 finalizadoEm: serverTimestamp(),
                  observacao: obs,
                  comprovanteEntregador: comprovante 
              };
-             if (atualizarEntrega(id, updates)) {
-                 alert('Entrega finalizada com sucesso!');
+             if (atualizarEntrega(docId, updates)) {
+                 showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso!');
              }
         }
         
@@ -1247,28 +1636,69 @@
             document.getElementById('modalAnexo').classList.remove('active');
             document.getElementById('anexoInputEntregador').value = '';
             document.getElementById('obsAnexoEntregador').value = '';
-            entregaParaFinalizarId = null;
+            window.entregaParaFinalizarId = null;
+        }
+        
+        // NOVO: Abre o modal de Cancelamento
+        function cancelarEntrega(docId) {
+            acaoCancelamentoDocId = docId;
+            acaoCancelamentoTipo = 'cancelada';
+            
+            const btnConfirmar = document.getElementById('btnConfirmarCancelamento');
+            btnConfirmar.onclick = confirmarModalCancelamento;
+            btnConfirmar.textContent = 'Confirmar Cancelamento';
+            btnConfirmar.classList.remove('btn-falha');
+            btnConfirmar.classList.add('danger');
+            
+            document.getElementById('modalCancelTitle').textContent = '❌ Cancelar Entrega';
+            document.getElementById('motivoCancelamentoInput').value = '';
+            document.getElementById('obsCancelamentoTextarea').value = '';
+            document.getElementById('modalCancelamento').classList.add('active');
         }
 
-        function cancelarEntrega(id) {
-            if (confirm('⚠️ ATENÇÃO: Deseja realmente CANCELAR esta entrega?')) {
-                const motivo = prompt('Digite o motivo do cancelamento (obrigatório):');
-                if (motivo && motivo.trim() !== '') {
-                    if (atualizarEntrega(id, { 
-                        status: 'cancelada', 
-                        motivoCancelamento: motivo, 
-                        canceladoPor: usuarioLogado, 
-                        finalizadoEm: new Date().toISOString() 
-                    })) {
-                        alert(`Entrega ${id} CANCELADA. Motivo: ${motivo}`);
-                    }
-                } else {
-                    alert('Motivo de cancelamento obrigatório. Ação abortada.');
-                }
+        // NOVO: Confirma a ação no modal de Cancelamento/Falha
+        function confirmarModalCancelamento() {
+            const motivo = document.getElementById('motivoCancelamentoInput').value.trim();
+            const obs = document.getElementById('obsCancelamentoTextarea').value.trim();
+            const docId = acaoCancelamentoDocId;
+            const tipo = acaoCancelamentoTipo;
+
+            if (!motivo) {
+                showMessageBox('⚠️ Erro', 'O Motivo do Cancelamento/Falha é obrigatório.');
+                return;
+            }
+
+            const updates = {
+                status: tipo, 
+                finalizadoEm: serverTimestamp(),
+                observacao: obs || null,
+            };
+            
+            let sucessoMsg = '';
+            
+            if (tipo === 'cancelada') {
+                 updates.motivoCancelamento = motivo;
+                 updates.canceladoPor = usuarioLogado;
+                 sucessoMsg = `Entrega CANCELADA com sucesso! Motivo: ${motivo}`;
+            } if (tipo === 'falha') {
+                 updates.motivoFalha = motivo;
+                 sucessoMsg = `Falha registrada com sucesso! Motivo: ${motivo}`;
+            }
+            
+            if (atualizarEntrega(docId, updates)) {
+                showMessageBox('✅ Sucesso', sucessoMsg);
+                fecharModalCancelamento();
             }
         }
-
-        // FUNÇÕES DE RENDERIZAÇÃO DE LISTAS E DASHBOARD
+        
+        // NOVO: Fecha o modal de Cancelamento/Falha
+        function fecharModalCancelamento() {
+            document.getElementById('modalCancelamento').classList.remove('active');
+            acaoCancelamentoDocId = null;
+            acaoCancelamentoTipo = null;
+        }
+        
+        // --- FUNÇÕES DE RENDERIZAÇÃO E CARREGAMENTO DE DADOS (FIREBASE) ---
         
         function renderizarCardEntrega(entrega, mostrarEntregador = false, isFiscal = false) {
             let statusClass = `status-${entrega.status.replace(/\s/g, '').toLowerCase()}`;
@@ -1283,26 +1713,29 @@
             let actions = '';
             
             if (entrega.status === 'pendente' && tipoUsuario === 'entregador') {
-                actions = `<button class="btn-small btn-pegar" onclick="pegarEntrega(${entrega.id})">Pegar Entrega</button>`;
+                actions = `<button class="btn-small btn-pegar" onclick="pegarEntrega('${entrega.docId}')">Pegar Entrega</button>`;
             } else if (entrega.status === 'em rota' && entrega.entregador === usuarioLogado && tipoUsuario === 'entregador') {
-                // NOVOS BOTÕES PARA O ENTREGADOR
+                // MUDANÇA: Texto do botão Maps
                 actions = `
-                    <button class="btn-small btn-maps" onclick="abrirNoMaps('${entrega.endereco}', '${entrega.bairro}')">🗺️ Navegar no Maps</button>
-                    <button class="btn-small btn-verde" onclick="abrirModalAnexo(${entrega.id})">📸 Anexar Comprovante (Pix/Cartão)</button>
-                    <button class="btn-small btn-entregar" onclick="finalizarEntrega(${entrega.id})">Entregue</button>
-                    <button class="btn-small btn-falha" onclick="falhaEntregaAcao(${entrega.id})">Falha</button>
+                    <button class="btn-small btn-maps" onclick="abrirNoMaps('${entrega.endereco}', '${entrega.bairro}')">🗺️ Abrir no Maps</button>
+                    <button class="btn-small btn-verde" onclick="abrirModalAnexo('${entrega.docId}')">📸 Anexar Comprovante</button>
+                    <button class="btn-small btn-entregar" onclick="finalizarEntrega('${entrega.docId}')">Entregue</button>
+                    <button class="btn-small btn-falha" onclick="falhaEntregaAcao('${entrega.docId}')">Falha</button>
                 `;
             }
             
-            // Ação de ver para todos, e botão de cancelar se for Fiscal/ADM
-            actions += `<button class="btn-small btn-ver" onclick="mostrarDetalhes(${entrega.id})">Ver Detalhes</button>`;
+            actions += `<button class="btn-small btn-ver" onclick="mostrarDetalhes('${entrega.docId}')">Ver Detalhes</button>`;
 
             if (isFiscal && entrega.status !== 'entregue' && entrega.status !== 'cancelada' && entrega.status !== 'falha') {
-                 actions += `<button class="btn-small btn-cancelar" onclick="cancelarEntrega(${entrega.id})">Cancelar</button>`;
+                 actions += `<button class="btn-small btn-cancelar" onclick="cancelarEntrega('${entrega.docId}')">Cancelar</button>`;
             }
 
             const entregadorInfo = mostrarEntregador && entrega.entregador ? 
                 `<div class="entrega-info"><strong>Entregador:</strong> ${entrega.entregador}</div>` : '';
+            
+            const adminInfo = isFiscal ? 
+                `<div class="entrega-info"><strong>Criada por:</strong> ${entrega.operadorCaixa} | <strong>Bairro:</strong> ${entrega.bairro}</div>` : 
+                `<div class="entrega-info"><strong>Bairro:</strong> ${entrega.bairro}</div>`;
                 
             return `
                 <div class="entrega-card">
@@ -1310,8 +1743,8 @@
                         <span class="entrega-nome">${entrega.clienteNome}</span>
                         <span class="status-badge ${statusClass}">${statusText}</span>
                     </div>
+                    ${adminInfo}
                     <div class="entrega-info"><strong>Valor:</strong> ${entrega.valor} (${entrega.pagamento}) | Caixa: ${entrega.caixa}</div>
-                    <div class="entrega-info"><strong>Bairro:</strong> ${entrega.bairro}</div>
                     ${entregadorInfo}
                     <div class="entrega-info" style="margin-top: 8px;">${badges}</div>
                     <div class="entrega-actions">${actions}</div>
@@ -1319,8 +1752,162 @@
             `;
         }
 
+        // Esta função será chamada pelo onSnapshot
+        function atualizarTelas() {
+            if (tipoUsuario === 'entregador') {
+                carregarEntregasEntregador();
+            } else if (tipoUsuario === 'fiscal') {
+                carregarDashboardFiscal();
+            } else if (tipoUsuario === 'atendimento') {
+                // Não precisa de recarga na tela de atendimento, mas garante o estado
+                mostrarTela('screenCriarEntrega');
+            }
+        }
+        
+        // NOVO: Função de Performance do Entregador
+        function mostrarPerformanceEntregadores() {
+            const entregasFiltradas = obterEntregasFiltradas(); 
+            const perfBody = document.getElementById('performanceBody');
+            perfBody.innerHTML = '';
+            
+            const entregadoresData = {};
+            const nomesEntregadores = Object.keys(ENTREGADORES);
+            
+            // 1. Inicializa todas as métricas para cada entregador
+            nomesEntregadores.forEach(nome => {
+                entregadoresData[nome] = {
+                    atribuidas: 0,
+                    entregues: 0,
+                    falhas: 0
+                };
+            });
+            
+            // 2. Calcula as métricas com base nas entregas filtradas
+            entregasFiltradas.forEach(e => {
+                const entregador = e.entregador;
+                
+                if (entregador && entregadoresData[entregador]) {
+                    entregadoresData[entregador].atribuidas += 1;
+                    
+                    if (e.status === 'entregue') {
+                        entregadoresData[entregador].entregues += 1;
+                    } else if (e.status === 'falha' || e.status === 'cancelada') {
+                        entregadoresData[entregador].falhas += 1;
+                    }
+                }
+            });
+            
+            // 3. Renderiza a tabela
+            let html = '';
+            
+            nomesEntregadores.forEach(nome => {
+                const data = entregadoresData[nome];
+                const taxaSucesso = data.atribuidas > 0 
+                    ? ((data.entregues / data.atribuidas) * 100).toFixed(1) 
+                    : 0.0;
+                    
+                html += `
+                    <tr>
+                        <td><strong>${nome}</strong></td>
+                        <td>${data.atribuidas}</td>
+                        <td class="performance-metric">${data.entregues}</td>
+                        <td><span style="color:${taxaSucesso >= 80 ? '#28a745' : taxaSucesso >= 50 ? '#ffc107' : '#dc3545'}">${taxaSucesso}%</span></td>
+                    </tr>
+                `;
+            });
+            
+            perfBody.innerHTML = html;
+            
+            // Atualiza o título do período
+            document.getElementById('performancePeriodo').textContent = document.getElementById('dataFiscal').textContent;
+            
+            mostrarTela('screenPerformance');
+        }
+
+
+        // NOVO: Renderiza o gráfico de barras
+        function renderizarGraficos(entregas) {
+             const counts = entregas.reduce((acc, e) => {
+                 acc[e.status] = (acc[e.status] || 0) + 1;
+                 return acc;
+             }, {});
+             
+             const data = [
+                 { status: 'Pendentes', count: counts['pendente'] || 0, color: '#ffc107' },
+                 { status: 'Em Rota', count: counts['em rota'] || 0, color: '#17a2b8' },
+                 { status: 'Entregues', count: counts['entregue'] || 0, color: '#28a745' },
+                 { status: 'Falhas/Canc.', count: (counts['falha'] || 0) + (counts['cancelada'] || 0), color: '#dc3545' }
+             ];
+             
+             // Configurações do gráfico
+             const container = d3.select("#statusChart");
+             container.html(''); // Limpa o SVG anterior
+             
+             // Usa a largura real do contêiner para responsividade
+             const containerWidth = container.node().getBoundingClientRect().width;
+             
+             const margin = { top: 10, right: 10, bottom: 30, left: 30 },
+                   width = containerWidth - margin.left - margin.right,
+                   height = 200 - margin.top - margin.bottom;
+
+             const svg = container.append("svg")
+                 .attr("width", "100%")
+                 .attr("height", height + margin.top + margin.bottom)
+                 .attr("viewBox", `0 0 ${containerWidth} ${height + margin.top + margin.bottom}`) // Ajusta viewBox para a largura total
+                 .append("g")
+                 .attr("transform", `translate(${margin.left},${margin.top})`);
+                 
+             // Escala X (status)
+             const x = d3.scaleBand()
+                 .range([0, width])
+                 .domain(data.map(d => d.status))
+                 .padding(0.2);
+                 
+             svg.append("g")
+                 .attr("transform", `translate(0,${height})`)
+                 .call(d3.axisBottom(x).tickSizeOuter(0))
+                 .selectAll("text")
+                 .attr("class", "axis-label");
+
+             // Escala Y (contagem)
+             const y = d3.scaleLinear()
+                 .domain([0, d3.max(data, d => d.count) || 10]) // Garante mínimo de 10 se não houver dados
+                 .range([height, 0]);
+                 
+             svg.append("g")
+                 .call(d3.axisLeft(y).ticks(Math.min(5, d3.max(data, d => d.count) || 5)).tickFormat(d3.format("d")))
+                 .selectAll("text")
+                 .attr("class", "axis-label");
+
+             // Barras
+             svg.selectAll(".bar")
+                 .data(data)
+                 .join("rect")
+                 .attr("class", "bar")
+                 .attr("x", d => x(d.status))
+                 .attr("y", d => y(d.count))
+                 .attr("width", x.bandwidth())
+                 .attr("height", d => height - y(d.count))
+                 .attr("fill", d => d.color);
+                 
+             // Rótulos de valor no topo das barras
+             svg.selectAll(".bar-label")
+                .data(data)
+                .join("text")
+                .attr("class", "bar-label")
+                .attr("x", d => x(d.status) + x.bandwidth() / 2)
+                .attr("y", d => y(d.count) - 5)
+                .attr("text-anchor", "middle")
+                .text(d => d.count)
+                .style("fill", "#3d4b7a")
+                .style("font-size", "12px")
+                .style("font-weight", "bold");
+        }
+
+
         function carregarEntregasEntregador() {
-            const entregasHoje = obterEntregasHoje();
+            // Entregador SEMPRE vê as entregas do dia
+            const entregasHoje = obterEntregasFiltradas().filter(e => e.data === new Date().toLocaleDateString('pt-BR')); 
             
             const pendentes = entregasHoje.filter(e => e.status === 'pendente');
             const emRota = entregasHoje.filter(e => e.entregador === usuarioLogado && e.status === 'em rota');
@@ -1342,21 +1929,35 @@
         }
 
         function carregarDashboardFiscal() {
-            const entregasHoje = obterEntregasHoje();
+            // Fiscal vê todas as entregas já filtradas pelo listener
+            const entregasFiltradas = obterEntregasFiltradas(); 
             
-            const totalPendentes = entregasHoje.filter(e => e.status === 'pendente').length;
-            const totalEmRota = entregasHoje.filter(e => e.status === 'em rota').length;
-            const totalEntregues = entregasHoje.filter(e => e.status === 'entregue').length;
+            const totalPendentes = entregasFiltradas.filter(e => e.status === 'pendente').length;
+            const totalEmRota = entregasFiltradas.filter(e => e.status === 'em rota').length;
+            
+            const entreguesSucesso = entregasFiltradas.filter(e => e.status === 'entregue');
+            const totalEntregues = entreguesSucesso.length;
+            
+            const valorTotalArrecadado = entreguesSucesso.reduce((sum, entrega) => {
+                return sum + (entrega.valorNumerico || 0); 
+            }, 0);
+
 
             document.getElementById('totalPendentes').textContent = totalPendentes;
             document.getElementById('totalEmRota').textContent = totalEmRota;
             document.getElementById('totalEntregues').textContent = totalEntregues;
-            document.getElementById('dataFiscal').textContent = new Date().toLocaleDateString('pt-BR');
+            document.getElementById('totalArrecadado').textContent = formatarMoeda(valorTotalArrecadado);
+            
+            document.getElementById('dataFiscal').textContent = `Dados para o período: ${document.getElementById('dataInicial').value || 'Início'} a ${document.getElementById('dataFinal').value || 'Fim'}`;
             document.getElementById('operadorLogado').textContent = usuarioLogado;
             
-            document.getElementById('listaTodasEntregas').innerHTML = entregasHoje.length > 0
-                ? entregasHoje.map(e => renderizarCardEntrega(e, true, true)).join('')
-                : '<div class="empty-state"><p>Nenhuma entrega registrada hoje.</p></div>';
+            // Renderiza o gráfico
+            renderizarGraficos(entregasFiltradas); 
+            
+            // Renderiza a lista de todas as entregas do período
+            document.getElementById('listaTodasEntregas').innerHTML = entregasFiltradas.length > 0
+                ? entregasFiltradas.map(e => renderizarCardEntrega(e, true, true)).join('')
+                : '<div class="empty-state"><p>Nenhuma entrega registrada no período selecionado.</p></div>';
         }
         
         function irParaDashboardFiscal() {
@@ -1369,19 +1970,21 @@
         }
 
         // MODAL DE DETALHES
-        function mostrarDetalhes(id) {
-            const entregas = JSON.parse(localStorage.getItem('entregas') || '[]');
-            const entrega = entregas.find(e => e.id == id);
+        function mostrarDetalhes(docId) {
+            const entrega = todasEntregas.find(e => e.docId == docId);
 
-            if (!entrega) return alert('Entrega não encontrada!');
+            if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
+            
+            const formatTimestamp = (ts) => ts && ts.toDate ? new Date(ts.toDate()).toLocaleString('pt-BR') : 'N/A';
 
-            const comprovanteEntregadorHtml = entrega.comprovanteEntregador && entrega.comprovanteEntregador !== 'Ausente/Físico' ? 
+
+            const comprovanteEntregadorHtml = entrega.comprovanteEntregador && entrega.comprovanteEntregador !== 'Não aplicável' ? 
                 `<div style="margin-top: 20px; text-align: center;"><p><strong>📸 Comprovante Entregador:</strong></p><img src="${entrega.comprovanteEntregador}" style="max-width: 100%; border-radius: 10px;"></div>` : '';
                 
             const entregadorInfo = entrega.entregador ? `
                 <p><strong>🚴 Entregador:</strong> ${entrega.entregador}</p>
-                ${entrega.saiuEm ? `<p><strong>⏱️ Saiu em:</strong> ${new Date(entrega.saiuEm).toLocaleString('pt-BR')}</p>` : ''}
-                <button class="btn-primary btn-maps" style="background: #007bff; margin-top: 15px;" onclick="abrirNoMaps('${entrega.endereco}', '${entrega.bairro}')">🗺️ Ver Rota no Maps</button>
+                ${entrega.saiuEm ? `<p><strong>⏱️ Saiu em:</strong> ${formatTimestamp(entrega.saiuEm)}</p>` : ''}
+                <!-- MUDANÇA: Texto do botão Maps na modal --><button class="btn-primary btn-maps" style="background: #007bff; margin-top: 15px;" onclick="abrirNoMaps('${entrega.endereco}', '${entrega.bairro}')">🗺️ Copiar Link do Maps</button>
                 <hr style="margin: 15px 0; border-color: #eee;">
             ` : '<p><strong>Entregador:</strong> Aguardando atribuição</p><hr style="margin: 15px 0; border-color: #eee;">';
 
@@ -1391,7 +1994,7 @@
             
             let statusExtra = '';
             if (entrega.status === 'entregue') {
-                 statusExtra = `<p><strong>Finalizado em:</strong> ${new Date(entrega.finalizadoEm).toLocaleString('pt-BR')}</p>`;
+                 statusExtra = `<p><strong>Finalizado em:</strong> ${formatTimestamp(entrega.finalizadoEm)}</p>`;
             } else if (entrega.status === 'cancelada') {
                  statusExtra = `
                      <p style="color: #dc3545; font-weight: bold;">❌ CANCELADA</p>
@@ -1408,9 +2011,11 @@
             const obsInfo = entrega.observacao ? `<p><strong>📝 Observação:</strong> ${entrega.observacao}</p>` : '';
             const comprovanteImg = entrega.comprovante ? 
                 `<div style="margin-top: 20px; text-align: center;"><p><strong>Comprovante (Caixa):</strong></p><img src="${entrega.comprovante}" style="max-width: 100%; border-radius: 10px;"></div>` : '';
-
+                
+            const idDoc = entrega.docId; // Mostra o ID do documento do Firestore
+            
             document.getElementById('modalConteudo').innerHTML = `
-                <h3 style="color: #3d4b7a; margin-bottom: 15px;">Detalhes da Entrega #${entrega.caixa} (${entrega.id})</h3>
+                <h3 style="color: #3d4b7a; margin-bottom: 15px;">Detalhes da Entrega (ID: ${idDoc.substring(0, 8)}...)</h3>
                 ${entregadorInfo}
                 <p><strong>Cliente:</strong> ${entrega.clienteNome}</p>
                 <p><strong>Endereço:</strong> ${entrega.endereco} - ${entrega.bairro}</p>
@@ -1436,7 +2041,7 @@
             document.getElementById('modalDetalhes').classList.remove('active');
         }
 
-        // NAVEGAÇÃO E AUTENTICAÇÃO (Início)
+        // --- NAVEGAÇÃO E AUTENTICAÇÃO (MANTIDAS) ---
         function mostrarTela(id) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.getElementById(id).classList.add('active');
@@ -1446,14 +2051,12 @@
             mostrarTela('screenInicio');
             document.getElementById('loginNome').value = '';
             document.getElementById('loginSenhaInput').value = '';
-            // Força a reinicialização dos botões
             document.getElementById('logoutBtn').style.display = 'none';
         }
 
         function mostrarLogin(tipo) {
-            tipoLoginAtual = tipo; // Corrigido a atribuição aqui para a variável global
+            tipoLoginAtual = tipo; 
             
-            // Esconde ambos os formulários
             document.getElementById('loginAtendimento').style.display = 'none';
             document.getElementById('loginSenha').style.display = 'none';
             
@@ -1461,7 +2064,6 @@
                 document.getElementById('loginTitulo').textContent = '📦 Login Criar Entrega';
                 document.getElementById('loginAtendimento').style.display = 'block';
 
-                // Preencher select de atendentes
                 const select = document.getElementById('atendenteNome');
                 select.innerHTML = '<option value="">Selecione...</option>';
                 for (const nome in ATENDENTES) {
@@ -1489,11 +2091,10 @@
             const senha = document.getElementById('atendenteSenha').value.trim();
 
             if (!nome || !senha) {
-                alert('Selecione seu nome e digite sua senha.');
+                showMessageBox('⚠️ Erro', 'Selecione seu nome e digite sua senha.');
                 return;
             }
 
-            // O login de atendimento é validado contra a lista ATENDENTES
             if (ATENDENTES[nome] && ATENDENTES[nome].senha === senha) {
                 usuarioLogado = nome;
                 tipoUsuario = 'atendimento';
@@ -1501,14 +2102,12 @@
                 
                 document.getElementById('operadorLogado').textContent = nome;
                 
-                // Limpa o campo de senha
                 document.getElementById('atendenteSenha').value = '';
-                // Garante que o estado inicial da tela de criação esteja correto
                 togglePagamentoFields(); 
 
                 mostrarTela('screenCriarEntrega');
             } else {
-                alert('❌ Nome ou Senha de Atendimento incorretos!');
+                showMessageBox('❌ Erro', 'Nome ou Senha de Atendimento incorretos!');
             }
         }
         
@@ -1517,7 +2116,7 @@
             const senha = document.getElementById('loginSenhaInput').value.trim();
 
             if (!nome || !senha) {
-                alert('Por favor, preencha todos os campos!');
+                showMessageBox('⚠️ Erro', 'Por favor, preencha todos os campos!');
                 return;
             }
 
@@ -1531,15 +2130,17 @@
 
                 if (tipoUsuario === 'entregador') {
                     document.getElementById('nomeEntregador').textContent = nome;
-                    carregarEntregasEntregador();
+                    carregarEntregasEntregador(); // Chamada inicial
                     mostrarTela('screenEntregador');
                 } else if (tipoUsuario === 'fiscal') {
                     document.getElementById('nomeFiscal').textContent = nome;
-                    carregarDashboardFiscal(); // Chamada direta para o Dashboard
+                    // MUDANÇA: Atualiza o listener com o filtro inicial ao logar
+                    setupFirestoreListener(); 
+                    carregarDashboardFiscal(); // Chamada inicial
                     mostrarTela('screenFiscal');
                 }
             } else {
-                alert('❌ Usuário ou senha incorretos!');
+                showMessageBox('❌ Erro', 'Usuário ou senha incorretos!');
             }
         }
 
@@ -1550,7 +2151,6 @@
             document.getElementById('loginNome').value = '';
             document.getElementById('loginSenhaInput').value = '';
             
-            // Limpa o estado da tela de criação de entrega
             const caixaSelect = document.getElementById('caixaSelect');
             if (caixaSelect) caixaSelect.value = '';
             
@@ -1560,50 +2160,109 @@
             voltarInicio();
         }
         
-        // --- INICIALIZAÇÃO ---
-        // A função de inicialização que é executada quando a página carrega
-        function init() {
-            // Tenta carregar os dados de ENTREGADORES e ATENDENTES do localStorage
+        // --- INICIALIZAÇÃO E LISTENER DO FIREBASE ---
+        
+        let unsubscribe = null; // Para armazenar o listener do onSnapshot
+
+        // MUDANÇA: Agora cria a query com base nos filtros de data
+        function setupFirestoreListener() {
+            if (unsubscribe) {
+                unsubscribe(); // Remove o listener anterior, se houver
+            }
+            if (!window.firestoreInit) return;
+            
+            try {
+                const db = window.db;
+                const ref = getEntregasCollectionRef();
+                let q = ref;
+                
+                // --- LÓGICA DO FILTRO DE DATAS ---
+                const dataInicial = document.getElementById('dataInicial') ? document.getElementById('dataInicial').value : null;
+                const dataFinal = document.getElementById('dataFinal') ? document.getElementById('dataFinal').value : null;
+                
+                if (dataInicial || dataFinal) {
+                    const dataInicio = dataInicial ? new Date(dataInicial + 'T00:00:00') : null;
+                    const dataFim = dataFinal ? new Date(dataFinal + 'T23:59:59') : null;
+                    
+                    if (dataInicio && dataFim && dataInicio > dataFim) {
+                         showMessageBox('⚠️ Erro de Filtro', 'A Data Inicial não pode ser maior que a Data Final.');
+                         return;
+                    }
+                    
+                    // Nota: O Firestore só pode filtrar por campos que aceitam range query (menor que/maior que)
+                    // Como a data é salva em pt-BR (dd/mm/aaaa), usamos o campo `criadoEm` (Timestamp do Servidor)
+                    if (dataInicio) {
+                         q = query(q, where('criadoEm', '>=', dataInicio));
+                    }
+                    if (dataFim) {
+                         q = query(q, where('criadoEm', '<=', dataFim));
+                    }
+                    
+                } else if (tipoUsuario !== 'fiscal') {
+                    // Se não houver filtro, mas for entregador/caixa, buscamos apenas o dia atual
+                    // Nota: O filtro de data é feito por `data` (string dd/mm/aaaa), pois o Timestamp é complexo
+                    // para queries de "hoje" sem `endAt`. Manteremos a filtragem no JS para evitar índices.
+                    // O Listener busca TUDO e a função `obterEntregasFiltradas()` filtra.
+                    // Para o Fiscal, sem datas, ele vê TUDO.
+                }
+
+                unsubscribe = onSnapshot(q, (snapshot) => {
+                    todasEntregas = [];
+                    snapshot.forEach((doc) => {
+                        todasEntregas.push({ docId: doc.id, ...doc.data() });
+                    });
+                    
+                    console.log(`[Firestore] Dados de entregas atualizados. Total: ${todasEntregas.length}`);
+                    atualizarTelas(); 
+                }, (error) => {
+                    console.error("Erro no onSnapshot:", error);
+                });
+            } catch (error) {
+                console.error("Erro ao configurar listener do Firestore:", error);
+            }
+        }
+
+        // Função principal de inicialização (chamada após o Firebase estar pronto)
+        window.init = function() {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('appContainer').style.display = 'block';
+
+            ({ collection, query, addDoc, updateDoc, doc, onSnapshot, serverTimestamp, where } = window.getFirestoreExports);
+
             const storedEntregadores = localStorage.getItem('ENTREGADORES');
             const storedAtendentes = localStorage.getItem('ATENDENTES');
 
             if (storedEntregadores) {
                 ENTREGADORES = JSON.parse(storedEntregadores);
             } else {
-                // Se não houver dados, salva a estrutura padrão (para a primeira execução)
                 salvarEntregadores();
             }
             
             if (storedAtendentes) {
                 ATENDENTES = JSON.parse(storedAtendentes);
             } else {
-                // Se não houver dados, salva a estrutura padrão (para a primeira execução)
-                salvarEntregadores(); // Chama novamente para garantir o salvamento de ATENDENTES
+                salvarEntregadores();
             }
 
-            // Configura o handler de upload de comprovante na tela de criação de entrega
+            // CORREÇÃO DE VALIDAÇÃO DE TAMANHO: Input do Caixa
             document.getElementById('fotoInput').addEventListener('change', function(event) {
                 const file = event.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        fotoComprovante = e.target.result; // Salva o base64 para o objeto de entrega
-                        document.getElementById('previewFoto').innerHTML = `<img src="${fotoComprovante}" style="max-width: 150px; border-radius: 8px; border: 1px solid #ddd;">`;
-                    };
-                    reader.readAsDataURL(file);
-                } else {
-                    fotoComprovante = null;
-                    document.getElementById('previewFoto').innerHTML = '';
-                }
+                handleImageUpload(file, (comprovante) => {
+                    window.fotoComprovante = comprovante; // base64 ou null
+                    document.getElementById('previewFoto').innerHTML = comprovante ? 
+                        `<img src="${comprovante}" style="max-width: 150px; border-radius: 8px; border: 1px solid #ddd;">` : '';
+                });
             });
 
-            // Tenta logar de volta no último estado ou volta para a tela inicial
+            // Se for Fiscal, seta o filtro inicial para o dia atual
+            // MUDANÇA: Não seta o filtro inicial aqui para que o Fiscal veja TUDO por padrão.
+            // O filtro de data na tela do entregador/caixa é sempre por "hoje" (função obterEntregasFiltradas).
+            
+            setupFirestoreListener(); // Inicia o listener que traz todos os dados (ou os dados filtrados pela data se preenchida)
+            
             voltarInicio(); 
         }
 
-        // Executa a inicialização
-        init();
     </script>
 </body>
-
 </html>
