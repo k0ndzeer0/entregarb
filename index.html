@@ -5,17 +5,592 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Entregas - Rio Branco (Dashboard)</title>
     
-    <script src="supabase.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     
     <style>
-        /* ESTILOS CSS COMPLETOS (Omitidos aqui para brevidade, mas devem estar no seu arquivo) */
+        /* ESTILOS CSS COMPLETOS */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        /* ... (Restante dos estilos) ... */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
+            min-height: 100vh;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+            flex-grow: 1;
+            margin-bottom: 20px;
+            width: 100%;
+        }
+        .header {
+            background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            position: relative;
+        }
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .logout-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+            padding: 8px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .content {
+            padding: 20px;
+        }
+        .screen {
+            display: none;
+        }
+        .screen.active {
+            display: block;
+        }
+        h2 {
+            color: #3d4b7a;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        h4 {
+            color: #3d4b7a;
+            margin-top: 15px;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            color: #3d4b7a;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #3d4b7a;
+        }
+        .form-group textarea {
+            min-height: 60px;
+            resize: vertical;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        @media (max-width: 400px) {
+            .form-row, .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .btn-primary {
+            width: 100%;
+            background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(61, 75, 122, 0.4);
+        }
+        .btn-voltar {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn-voltar:hover {
+            background: #5a6268;
+        }
+        .role-btn {
+            background: white;
+            border: 3px solid #3d4b7a;
+            color: #3d4b7a;
+            padding: 25px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 15px;
+            cursor: pointer;
+            display: block;
+            width: 100%;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        .role-btn:hover {
+            background: #3d4b7a;
+            color: white;
+        }
+        .entrega-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        .entrega-card:hover {
+            border-color: #3d4b7a;
+            transform: translateX(5px);
+        }
+        .entrega-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .entrega-nome {
+            font-weight: bold;
+            font-size: 18px;
+            color: #3d4b7a;
+        }
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-pendente {
+            background: #ffc107;
+            color: #000;
+        }
+        .status-emrota {
+            background: #17a2b8;
+            color: white;
+        }
+        .status-entregue {
+            background: #28a745;
+            color: white;
+        }
+        .status-cancelada, .status-falha {
+            background: #dc3545;
+            color: white;
+        }
+        .entrega-info {
+            color: #666;
+            font-size: 14px;
+            margin: 5px 0;
+        }
+        .entrega-info strong {
+            color: #333;
+        }
+        .entrega-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-small {
+            flex: 1;
+            min-width: 100px;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            transition: background 0.3s;
+        }
+        .btn-small:hover {
+            opacity: 0.9;
+        }
+        .btn-pegar {
+            background: #3d4b7a;
+            color: white;
+        }
+        .btn-entregar {
+            background: #28a745;
+            color: white;
+        }
+        .btn-falha {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-ver {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-cancelar {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-maps {
+            background: #007bff;
+            color: white;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .stats-grid.full {
+            grid-template-columns: 1fr;
+        }
+        .stat-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #3d4b7a;
+        }
+        .stat-number.green {
+             color: #28a745;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .chart-container {
+             background: #f8f9fa;
+             border: 1px solid #ddd;
+             border-radius: 10px;
+             padding: 15px;
+             margin-bottom: 20px;
+             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .chart-container h3 {
+             color: #3d4b7a;
+             font-size: 18px;
+             margin-bottom: 10px;
+        }
+        #statusChart .bar {
+            fill: #d63031;
+            transition: fill 0.3s;
+        }
+        #statusChart .bar:hover {
+             fill: #3d4b7a;
+        }
+        .axis-label {
+             font-size: 10px;
+             fill: #666;
+        }
+        .geladeira-badge {
+            display: inline-block;
+            background: #17a2b8;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .pago-badge {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .cobrar-badge {
+            display: inline-block;
+            background: #ffc107;
+            color: #000;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .troco-badge {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .detalhes-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+        .detalhes-modal.active {
+            display: flex;
+        }
+        .detalhes-content {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        .btn-fechar {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+        .adm-item {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-left: 5px solid #3d4b7a;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        .adm-item:hover {
+            background: #f0f0f0;
+        }
+        .gestao-card {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        }
+        .gestao-card h3 {
+            color: #d63031;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        .gestao-card p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .gestao-actions-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .btn-add-points {
+            background: #28a745;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-remove-points {
+            background: #ffc107;
+            color: #333;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-reset-senha {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-remover-user {
+            background: #dc3545;
+            color: white;
+        }
+        #loginAtendimento {
+            background: #f0f4f7;
+            padding: 15px;
+            border-radius: 10px;
+        }
+        #loginAtendimento button {
+            margin-top: 20px;
+        }
+        #modalAnexo {
+            background: rgba(0,0,0,0.9);
+            z-index: 1001;
+        }
+        #modalAnexo .detalhes-content {
+            background: #f8f9fa;
+            text-align: center;
+        }
+        #modalAnexo input[type="file"] {
+            border: 2px dashed #3d4b7a;
+            padding: 20px 12px;
+            cursor: pointer;
+        }
+        #modalAnexo textarea {
+            border: 1px solid #ddd;
+            margin-top: 10px;
+        }
+        #modalAnexo button {
+            margin-top: 15px;
+        }
+        .custom-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        .custom-modal.active {
+            display: flex;
+        }
+        .custom-modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            max-width: 350px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 5px 30px rgba(0,0,0,0.4);
+        }
+        .custom-modal-content.wide {
+            max-width: 500px;
+            width: 90%;
+            text-align: left;
+        }
+        .custom-modal-content h4 {
+            color: #3d4b7a;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .custom-modal-content p {
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            flex: 1;
+        }
+        .modal-btn.primary {
+            background: #3d4b7a;
+            color: white;
+        }
+        .modal-btn.secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+        .modal-btn.danger {
+            background: #dc3545;
+            color: white;
+        }
+        .performance-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .performance-table th, .performance-table td {
+            padding: 12px 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .performance-table th {
+            background-color: #f0f4f7;
+            color: #3d4b7a;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        .performance-table tr:hover {
+            background-color: #fafafa;
+        }
+        .performance-metric {
+            font-weight: bold;
+            color: #28a745;
+        }
+        .footer {
+            text-align: center;
+            padding: 15px;
+            color: rgba(255,255,255,0.8);
+            font-size: 12px;
+            margin-top: auto;
+        }
     </style>
 
     <script>
@@ -36,17 +611,1187 @@
         let initializationAttempts = 0;
         const MAX_ATTEMPTS = 10;
         
-        let usuarioLogado = null; // ... (demais variáveis globais)
+        let usuarioLogado = null;
+        let tipoUsuario = null; 
+        let tipoLoginAtual = null;
+        let entregadorEmGestao = null; 
+        let entregaParaFinalizarId = null; 
+        let acaoCancelamentoDocId = null;
+        let acaoCancelamentoTipo = null; 
         
         // Dados de Login Locais
         let GESTORES = { 'Cadu': { senha: '1228' }, 'Mari': { senha: '2992' }, 'Junior': { senha: '0701' }, 'Carlos': { senha: '5875' } };
         let ENTREGADORES = { 'Carlos': { senha: '587596', telefone: '66996005936', pontos: 100, historicoPontos: [] }, 'Cadu': { senha: '1228', telefone: '66999999999', pontos: 50, historicoPontos: [] }, 'Jonatan': { senha: '1234', telefone: '66988888888', pontos: 0, historicoPontos: [] } };
         let ATENDENTES = { 'Katia': { senha: '1234' }, 'Maria Eduarda': { senha: '1234' }, 'Andre Lopes': { senha: '1234' }, 'Hugo Aguiar': { senha: '1234' }, 'Cadu': { senha: '1234' }, 'Junior': { senha: '1234' }, 'Marilu': { senha: '1234' } };
+
         
+        // --- DEFINIÇÕES DE FUNÇÕES (DEVE ESTAR ANTES DA CHAMADA) ---
+
+        // Funções de Modal
+        const customModal = document.getElementById('customModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalButtons = document.getElementById('modalButtons');
+
+        function showMessageBox(title, message) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modalButtons.innerHTML = `<button class="modal-btn primary" onclick="customModal.classList.remove('active')">OK</button>`;
+            const modal = document.getElementById('customModal');
+            if (modal) modal.classList.add('active');
+        }
+
+        function showConfirmBox(title, message, onConfirm, onCancel = null) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modalButtons.innerHTML = `
+                <button class="modal-btn secondary" id="confirmCancel">Cancelar</button>
+                <button class="modal-btn primary" id="confirmOk">Sim</button>
+            `;
+            const modal = document.getElementById('customModal');
+            if (modal) modal.classList.add('active');
+
+            document.getElementById('confirmOk').onclick = () => {
+                const modal = document.getElementById('customModal');
+                if (modal) modal.classList.remove('active');
+                if (onConfirm) onConfirm();
+            };
+            document.getElementById('confirmCancel').onclick = () => {
+                const modal = document.getElementById('customModal');
+                if (modal) modal.classList.remove('active');
+                if (onCancel) onCancel();
+            };
+        }
+
+        // Funções de Utilidade
+        function formatarTelefone(telefone) {
+            if (!telefone) return '';
+            const nums = String(telefone).replace(/\D/g, '');
+            if (nums.length === 11) {
+                return `(${nums.substring(0, 2)}) ${nums.substring(2, 7)}-${nums.substring(7, 11)}`;
+            } else if (nums.length === 10) {
+                return `(${nums.substring(0, 2)}) ${nums.substring(2, 6)}-${nums.substring(6, 10)}`;
+            }
+            return telefone;
+        }
+
+        function formatarMoeda(valor) {
+            if (!valor) return 'R$ 0,00';
+            const valorString = String(valor);
+            const num = parseFloat(valorString.replace('R$', '').replace(/\s/g, '').replace(',', '.'));
+            if (isNaN(num)) return 'R$ 0,00';
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+        }
         
-        // --- DEFINIÇÕES DE FUNÇÕES DE MODAL, UTILIDADE, CRUD, E TELAS (COMPLETAS) ---
+        function limparMoeda(valor) {
+             if (!valor) return 0;
+             const valorString = String(valor);
+             return parseFloat(valorString.replace(/[R$ ]/g, '').replace(',', '.'));
+        }
         
-        // ... (Todas as funções completas que definimos anteriormente, como showMessageBox, criarEntrega, setupSupabaseListener, etc., DEVEM ESTAR DEFINIDAS AQUI) ...
+        function formatSupabaseDate(dateString) {
+             if (!dateString) return 'N/A';
+             return new Date(dateString).toLocaleString('pt-BR');
+        }
+
+        function salvarEntregadores() {
+             localStorage.setItem('ENTREGADORES', JSON.stringify(ENTREGADORES));
+             localStorage.setItem('ATENDENTES', JSON.stringify(ATENDENTES)); 
+        }
+
+        function obterEntregasFiltradas() {
+            let entregasFiltradas = todasEntregas.slice(); 
+            
+            const dataInicialStr = document.getElementById('dataInicial') ? document.getElementById('dataInicial').value : null;
+            const dataFinalStr = document.getElementById('dataFinal') ? document.getElementById('dataFinal').value : null;
+
+            if (dataInicialStr || dataFinalStr) {
+                const dataInicio = dataInicialStr ? new Date(dataInicialStr + 'T00:00:00') : null;
+                const dataFim = dataFinalStr ? new Date(dataFinalStr + 'T23:59:59') : null;
+
+                entregasFiltradas = entregasFiltradas.filter(e => {
+                    const dataEntrega = new Date(e.created_at);
+                    const isAposInicio = dataInicio ? dataEntrega >= dataInicio : true;
+                    const isAntesFim = dataFim ? dataEntrega <= dataFim : true;
+                    return isAposInicio && isAntesFim;
+                });
+            }
+            
+            if (tipoUsuario === 'entregador') {
+                const hoje = new Date().toLocaleDateString('pt-BR');
+                entregasFiltradas = entregasFiltradas.filter(e => e.data === hoje); 
+            }
+            
+            return entregasFiltradas.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)); 
+        }
+
+        function abrirNoMaps(endereco, bairro) {
+            const destino = `${endereco}, ${bairro}, Garça, SP, Brasil`; 
+            const mapsUrl = `https://www.google.com/maps/dir/${encodeURIComponent(ORIGEM_MAPS)}/${encodeURIComponent(destino)}/data=!4m2!4m1!3e0`;
+            
+            const tempInput = document.createElement('textarea');
+            tempInput.value = mapsUrl;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy'); 
+            document.body.removeChild(tempInput);
+
+            showMessageBox('🗺️ Link Copiado!', 'O link de navegação do Maps foi copiado para a área de transferência. Cole em seu navegador ou abra o app de Maps.');
+        }
+        
+        function togglePagamentoFields() {
+            let forma = document.getElementById('formaPagamento').value;
+            let status = document.getElementById('statusPagamento').value;
+            let trocoGroup = document.getElementById('trocoGroup');
+            let fotoComprovante = document.getElementById('fotoComprovante');
+            let formaPagamentoGroup = document.getElementById('formaPagamentoGroup');
+            let formaPagamentoSelect = document.getElementById('formaPagamento');
+
+            if (status === 'NÃO' || status === 'SIM') { 
+                 formaPagamentoGroup.style.display = 'block';
+            } else { 
+                formaPagamentoGroup.style.display = 'none';
+                formaPagamentoSelect.value = ''; 
+            }
+
+            if (forma === 'Dinheiro' && status === 'NÃO') {
+                trocoGroup.style.display = 'block';
+            } else {
+                trocoGroup.style.display = 'none';
+                document.getElementById('valorTroco').value = '';
+            }
+
+            if ((forma === 'Pix' || forma === 'Cartão') && status === 'SIM') {
+                 fotoComprovante.style.display = 'block';
+            } else {
+                 fotoComprovante.style.display = 'none';
+                 document.getElementById('fotoInput').value = '';
+                 document.getElementById('previewFoto').innerHTML = '';
+            }
+        }
+
+        function toggleOutroCaixa() {
+            const caixa = document.getElementById('caixaSelect').value;
+            const outroMotivoGroup = document.getElementById('outroCaixaMotivo');
+            
+            if (caixa === 'Outro') {
+                outroMotivoGroup.style.display = 'block';
+            } else {
+                outroMotivoGroup.style.display = 'none';
+                document.getElementById('caixaMotivoInput').value = '';
+            }
+        }
+        
+        function renderizarCardEntrega(entrega, mostrarEntregador = false, isFiscal = false) {
+            let statusClass = `status-${entrega.status.replace(/\s/g, '').toLowerCase()}`;
+            let statusText = entrega.status.toUpperCase();
+            
+            let badges = '';
+            if (entrega.geladeira === 'Sim') badges += `<span class="geladeira-badge">❄️ GELADEIRA</span>`;
+            if (entrega.jaPago === 'SIM') badges += `<span class="pago-badge">✅ PAGO (${entrega.pagamento})</span>`;
+            if (entrega.jaPago === 'NÃO') badges += `<span class="cobrar-badge">💰 COBRAR ${entrega.valor}</span>`;
+            if (entrega.troco && entrega.troco !== 'Não') badges += `<span class="troco-badge">💵 TROCO: ${entrega.troco}</span>`;
+
+            let actions = '';
+            
+            const id = entrega.id; 
+
+            if (entrega.status === 'pendente' && tipoUsuario === 'entregador') {
+                actions = `<button class="btn-small btn-pegar" onclick="pegarEntrega('${id}')">Pegar Entrega</button>`;
+            } else if (entrega.status === 'em rota' && entrega.entregador === usuarioLogado && tipoUsuario === 'entregador') {
+                actions = `
+                    <button class="btn-small btn-maps" onclick="abrirNoMaps('${entrega.endereco}', '${entrega.bairro}')">🗺️ Abrir no Maps</button>
+                    <button class="btn-small btn-verde" onclick="abrirModalAnexo('${id}')">📸 Anexar Comprovante</button>
+                    <button class="btn-small btn-entregar" onclick="finalizarEntrega('${id}')">Entregue</button>
+                    <button class="btn-small btn-falha" onclick="falhaEntregaAcao('${id}')">Falha</button>
+                `;
+            }
+            
+            actions += `<button class="btn-small btn-ver" onclick="mostrarDetalhes('${id}')">Ver Detalhes</button>`;
+
+            if (isFiscal && entrega.status !== 'entregue' && entrega.status !== 'cancelada' && entrega.status !== 'falha') {
+                 actions += `<button class="btn-small btn-cancelar" onclick="cancelarEntrega('${id}')">Cancelar</button>`;
+            }
+
+            const entregadorInfo = mostrarEntregador && entrega.entregador ? 
+                `<div class="entrega-info"><strong>Entregador:</strong> ${entrega.entregador}</div>` : '';
+            
+            const adminInfo = isFiscal ? 
+                `<div class="entrega-info"><strong>Criada por:</strong> ${entrega.operadorCaixa} | <strong>Bairro:</strong> ${entrega.bairro}</div>` : 
+                `<div class="entrega-info"><strong>Bairro:</strong> ${entrega.bairro}</div>`;
+                
+            return `
+                <div class="entrega-card">
+                    <div class="entrega-header">
+                        <span class="entrega-nome">${entrega.clienteNome}</span>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                    ${adminInfo}
+                    <div class="entrega-info"><strong>Valor:</strong> ${entrega.valor} (${entrega.pagamento}) | Caixa: ${entrega.caixa}</div>
+                    ${entregadorInfo}
+                    <div class="entrega-info" style="margin-top: 8px;">${badges}</div>
+                    <div class="entrega-actions">${actions}</div>
+                </div>
+            `;
+        }
+
+        function carregarEntregasEntregador() {
+            const entregas = obterEntregasFiltradas();
+
+            const pendentes = entregas.filter(e => e.status === 'pendente');
+            const emRota = entregas.filter(e => e.entregador === usuarioLogado && e.status === 'em rota');
+            const historico = entregas.filter(e => e.status === 'entregue' || e.status === 'falha' || e.status === 'cancelada');
+
+            const emRotaCount = document.getElementById('entregasEmRotaCount');
+            if (emRotaCount) emRotaCount.textContent = emRota.length;
+            
+            const listaPendentes = document.getElementById('listaEntregasPendentes');
+            if (listaPendentes) listaPendentes.innerHTML = pendentes.map(e => renderizarCardEntrega(e, false, false)).join('') || '<div class="empty-state">Nenhuma entrega pendente na fila.</div>';
+
+            const listaEmRota = document.getElementById('listaEntregasEmRota');
+            if (listaEmRota) listaEmRota.innerHTML = emRota.map(e => renderizarCardEntrega(e, false, false)).join('') || '<div class="empty-state">Nenhuma entrega em sua rota.</div>';
+
+            const listaHistorico = document.getElementById('listaEntregasEntregues');
+            if (listaHistorico) listaHistorico.innerHTML = historico.map(e => renderizarCardEntrega(e, true, false)).join('') || '<div class="empty-state">Nenhum histórico de entrega hoje.</div>';
+        }
+        
+        function carregarDashboardFiscal() {
+            const entregas = obterEntregasFiltradas();
+
+            let totalPendentes = 0;
+            let totalEmRota = 0;
+            let totalEntregues = 0;
+            let totalArrecadadoNum = 0;
+            let dadosGrafico = {};
+
+            let listaHTML = '';
+
+            entregas.forEach(e => {
+                listaHTML += renderizarCardEntrega(e, true, true); 
+                
+                switch (e.status) {
+                    case 'pendente': totalPendentes++; break;
+                    case 'em rota': totalEmRota++; break;
+                    case 'entregue': 
+                        totalEntregues++;
+                        totalArrecadadoNum += e.valorNumerico; 
+                        break;
+                }
+                
+                dadosGrafico[e.status] = (dadosGrafico[e.status] || 0) + 1;
+            });
+
+            const totalPendentesEl = document.getElementById('totalPendentes');
+            if (totalPendentesEl) totalPendentesEl.textContent = totalPendentes;
+            const totalEmRotaEl = document.getElementById('totalEmRota');
+            if (totalEmRotaEl) totalEmRotaEl.textContent = totalEmRota;
+            const totalEntreguesEl = document.getElementById('totalEntregues');
+            if (totalEntreguesEl) totalEntreguesEl.textContent = totalEntregues;
+            const totalArrecadadoEl = document.getElementById('totalArrecadado');
+            if (totalArrecadadoEl) totalArrecadadoEl.textContent = formatarMoeda(totalArrecadadoNum);
+            
+            const listaTodasEntregas = document.getElementById('listaTodasEntregas');
+            if (listaTodasEntregas) listaTodasEntregas.innerHTML = listaHTML || `<div class="empty-state">Nenhuma entrega encontrada no período.</div>`;
+            
+            renderizarGraficoStatus(dadosGrafico);
+        }
+
+        function renderizarGraficoStatus(dataObject) {
+            const data = Object.keys(dataObject).map(key => ({
+                status: key,
+                count: dataObject[key]
+            }));
+
+            const container = d3.select("#statusChart");
+            if (!container.empty()) {
+                container.html("");
+
+                if (data.length === 0) {
+                    container.html('<div class="empty-state">Sem dados para exibir o gráfico.</div>');
+                    return;
+                }
+
+                const width = 400;
+                const height = 200;
+                const margin = { top: 10, right: 10, bottom: 30, left: 40 };
+
+                const svg = container.append("svg")
+                    .attr("width", "100%")
+                    .attr("height", height)
+                    .attr("viewBox", `0 0 ${width} ${height}`)
+                    .append("g")
+                    .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+                const x = d3.scaleBand()
+                    .domain(data.map(d => d.status))
+                    .range([0, width - margin.left - margin.right])
+                    .padding(0.2);
+
+                const y = d3.scaleLinear()
+                    .domain([0, d3.max(data, d => d.count) || 1])
+                    .range([height - margin.top - margin.bottom, 0]);
+
+                svg.append("g")
+                    .attr("transform", `translate(0, ${height - margin.top - margin.bottom})`)
+                    .call(d3.axisBottom(x))
+                    .selectAll("text")
+                    .attr("class", "axis-label");
+
+                svg.append("g")
+                    .call(d3.axisLeft(y).ticks(d3.max(data, d => d.count) || 1).tickFormat(d3.format("d"))) 
+                    .selectAll("text")
+                    .attr("class", "axis-label");
+
+                svg.selectAll(".bar")
+                    .data(data)
+                    .enter().append("rect")
+                    .attr("class", d => `bar status-${d.status.replace(/\s/g, '').toLowerCase()}`)
+                    .attr("x", d => x(d.status))
+                    .attr("y", d => y(d.count))
+                    .attr("width", x.bandwidth())
+                    .attr("height", d => (height - margin.top - margin.bottom) - y(d.count));
+            }
+        }
+
+        function carregarPerformanceEntregadores() {
+            const entregas = obterEntregasFiltradas();
+
+            const performanceData = {};
+
+            entregas.forEach(e => {
+                const nome = e.entregador || 'Não Atribuído';
+                
+                if (!performanceData[nome]) {
+                    performanceData[nome] = { atribuido: 0, entregue: 0, falha: 0, cancelada: 0 };
+                }
+
+                if (e.status !== 'pendente') {
+                    performanceData[nome].atribuido++;
+                }
+
+                if (e.status === 'entregue') {
+                    performanceData[nome].entregue++;
+                } else if (e.status === 'falha') {
+                    performanceData[nome].falha++;
+                } else if (e.status === 'cancelada') {
+                    performanceData[nome].cancelada++;
+                }
+            });
+
+            const tbody = document.getElementById('performanceBody');
+            if (tbody) {
+                tbody.innerHTML = '';
+            
+                let listaEntregadores = Object.keys(performanceData).sort((a, b) => {
+                    if (a === 'Não Atribuído') return 1;
+                    if (b === 'Não Atribuído') return -1;
+                    const successA = (performanceData[a].entregue / (performanceData[a].atribuido || 1)) * 100;
+                    const successB = (performanceData[b].entregue / (performanceData[b].atribuido || 1)) * 100;
+                    return successB - successA;
+                });
+
+                if (listaEntregadores.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhuma entrega finalizada ou em rota no período.</td></tr>';
+                    return;
+                }
+                
+                listaEntregadores.forEach(nome => {
+                    const data = performanceData[nome];
+                    const total = data.atribuido;
+                    const sucesso = data.entregue;
+                    const taxaSucesso = total > 0 ? ((sucesso / total) * 100).toFixed(1) : '0.0';
+                    
+                    let statusClass = taxaSucesso >= 90 ? 'green' : (taxaSucesso >= 75 ? '' : 'danger');
+
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong>${nome}</strong></td>
+                            <td>${total}</td>
+                            <td>${sucesso}</td>
+                            <td class="performance-metric" style="color: ${statusClass === 'green' ? '#28a745' : (statusClass === 'danger' ? '#dc3545' : '#3d4b7a')};">${taxaSucesso}%</td>
+                        </tr>
+                    `;
+                });
+            }
+        }
+        
+        function carregarGestaoAdm() {
+            if (tipoUsuario !== 'fiscal') {
+                mostrarLogin('fiscal');
+                return;
+            } 
+            
+            const select = document.getElementById('entregadorGestaoSelect');
+            if (select) {
+                select.innerHTML = '<option value="">Selecione o Entregador...</option>';
+                
+                const entregadoresOrdenados = Object.keys(ENTREGADORES).sort();
+                entregadoresOrdenados.forEach(nome => {
+                    select.innerHTML += `<option value="${nome}">${nome} (${ENTREGADORES[nome].pontos || 0} Pts)</option>`;
+                });
+            }
+            
+            const gestaoCard = document.getElementById('gestaoCard');
+            if (gestaoCard) gestaoCard.style.display = 'none';
+            carregarListaEntregadoresAdm();
+            mostrarTela('screenAdmin');
+        }
+
+        function carregarDetalhesGestao() {
+            const nome = document.getElementById('entregadorGestaoSelect').value;
+            entregadorEmGestao = nome;
+            
+            const gestaoCard = document.getElementById('gestaoCard');
+            if (!nome || !gestaoCard) {
+                if (gestaoCard) gestaoCard.style.display = 'none';
+                return;
+            }
+
+            const data = ENTREGADORES[nome];
+            const colabGestaoNome = document.getElementById('colabGestaoNome');
+            if (colabGestaoNome) colabGestaoNome.textContent = nome;
+            const colabGestaoSenha = document.getElementById('colabGestaoSenha');
+            if (colabGestaoSenha) colabGestaoSenha.textContent = data.senha;
+            const colabGestaoPontos = document.getElementById('colabGestaoPontos');
+            if (colabGestaoPontos) colabGestaoPontos.textContent = `${data.pontos || 0} Pts`;
+            gestaoCard.style.display = 'block';
+        }
+
+        function ajustarPontosEntregador(acao) {
+            if (!GUESTORES[fiscalLogado]) return showMessageBox('❌ Você precisa estar logado como Fiscal/ADM.', 'error');
+            
+            const user = entregadorEmGestao;
+            const isAdd = acao === 'adicionar';
+            const acaoDisplay = isAdd ? 'ADICIONAR' : 'RETIRAR';
+
+            const pontosStr = prompt(`Digite a quantidade de pontos que deseja ${acaoDisplay} para ${user}:`);
+            if (pontosStr === null) return;
+            
+            const pontos = parseInt(pontosStr);
+
+            if (isNaN(pontos) || pontos <= 0) { showMessageBox('❌ Pontuação inválida!', 'error'); return; }
+
+            const motivo = prompt(`Digite o MOTIVO para ${acaoDisplay} ${pontos} pontos de ${user} (Obrigatório):`);
+            if (!motivo || motivo.trim() === '') { showMessageBox('Motivo obrigatório. Ação cancelada.', 'error'); return; }
+
+            const ajustePontos = isAdd ? pontos : -pontos;
+            
+            ENTREGADORES[user].pontos = (ENTREGADORES[user].pontos || 0) + ajustePontos;
+
+            const novoHistorico = {
+                pontos: ajustePontos,
+                motivo: motivo,
+                adm: usuarioLogado,
+                timestamp: new Date().toISOString()
+            };
+            ENTREGADORES[user].historicoPontos.push(novoHistorico);
+            
+            salvarEntregadores();
+            carregarDetalhesGestao();
+            showMessageBox('✅ Sucesso', `${pontos} Pontos ${isAdd ? 'adicionados' : 'removidos'} de ${user}.`);
+        }
+
+        function resetarSenhaEntregador() {
+             if (!GUESTORES[fiscalLogado]) return showMessageBox('❌ Você precisa estar logado como Fiscal/ADM.', 'error');
+             showConfirmBox(`⚠️ Confirmação de Reset`, `Para resetar a senha de "${entregadorEmGestao}" para a padrão ${SENHA_RESET}, clique em Sim.`, () => {
+                 ENTREGADORES[entregadorEmGestao].senha = SENHA_RESET;
+                 salvarEntregadores();
+                 showMessageBox('✅ Sucesso', `Senha de "${entregadorEmGestao}" resetada para ${SENHA_RESET}.`);
+                 carregarDetalhesGestao();
+            });
+        }
+        
+        function removerEntregadorAcao() {
+            if (!GUESTORES[fiscalLogado]) return showMessageBox('❌ Você precisa estar logado como Fiscal/ADM.', 'error');
+            showConfirmBox('⚠️ Confirmação', `Tem certeza que deseja remover permanentemente o entregador ${entregadorEmGestao}?`, () => {
+                delete ENTREGADORES[entregadorEmGestao];
+                salvarEntregadores();
+                showMessageBox('✅ Sucesso', `Entregador ${entregadorEmGestao} removido.`);
+                entregadorEmGestao = null;
+                carregarGestaoAdm(); 
+            });
+        }
+
+        function carregarListaEntregadoresAdm() {
+            const lista = document.getElementById('listaEntregadoresAdm');
+            if (!lista) return;
+            lista.innerHTML = '';
+            
+            for (const nome in ENTREGADORES) {
+                const data = ENTREGADORES[nome];
+                lista.innerHTML += `
+                    <div class="adm-item" onclick="document.getElementById('entregadorGestaoSelect').value='${nome}'; carregarDetalhesGestao();">
+                        <span><strong>${nome}</strong> - Pts: ${data.pontos || 0}</span>
+                        <div class="entrega-actions" style="gap: 5px; margin: 0;">
+                            <span class="status-badge status-emrota" style="flex: none; padding: 5px 10px;">Gerenciar →</span>
+                        </div>
+                    </div>
+                `;
+            }
+            if (Object.keys(ENTREGADORES).length === 0) {
+                 lista.innerHTML = '<div class="empty-state" style="padding: 10px;">Nenhum entregador cadastrado.</div>';
+            }
+        }
+        
+        function adicionarEntregador() {
+            if (!GUESTORES[fiscalLogado]) return showMessageBox('❌ Você precisa estar logado como Fiscal/ADM.', 'error');
+            
+            const nomeInput = document.getElementById('novoEntregadorNome');
+            const senhaInput = document.getElementById('novoEntregadorSenha');
+            const telefoneInput = document.getElementById('novoEntregadorTelefone');
+            
+            const nome = nomeInput ? nomeInput.value.trim() : '';
+            const senha = senhaInput ? senhaInput.value.trim() : '';
+            const telefone = telefoneInput ? telefoneInput.value.trim().replace(/\D/g, '') : '';
+
+            if (!nome || !senha || senha.length < 4) {
+                showMessageBox('⚠️ Erro', 'Nome e senha (mínimo 4 caracteres) são obrigatórios.');
+                return;
+            }
+
+            if (ENTREGADORES[nome]) {
+                showMessageBox('⚠️ Erro', `Entregador ${nome} já existe.`);
+                return;
+            }
+
+            ENTREGADORES[nome] = { senha: senha, telefone: telefone, pontos: 0, historicoPontos: [] };
+            salvarEntregadores();
+
+            showMessageBox('✅ Sucesso', `Entregador ${nome} adicionado com sucesso!`);
+            if (nomeInput) nomeInput.value = '';
+            if (senhaInput) senhaInput.value = '';
+            if (telefoneInput) telefoneInput.value = '';
+            carregarGestaoAdm(); 
+        }
+
+        function mostrarDetalhes(docId) {
+             const entrega = todasEntregas.find(e => e.id == docId);
+             if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
+
+             let content = `
+                 <h2 style="color: #d63031;">Detalhes da Entrega #${entrega.id}</h2>
+                 <p><strong>Status:</strong> <span class="status-badge status-${entrega.status.replace(/\s/g, '').toLowerCase()}">${entrega.status.toUpperCase()}</span></p>
+                 <hr style="margin: 15px 0;">
+                 <h4>Cliente e Destino</h4>
+                 <p><strong>Cliente:</strong> ${entrega.clienteNome}</p>
+                 <p><strong>Endereço:</strong> ${entrega.endereco}</p>
+                 <p><strong>Bairro:</strong> ${entrega.bairro}</p>
+                 <p><strong>Telefone:</strong> ${formatarTelefone(entrega.telefone)}</p>
+                 <p><strong>Geladeira:</strong> ${entrega.geladeira}</p>
+                 <hr style="margin: 15px 0;">
+                 <h4>Financeiro e Logística</h4>
+                 <p><strong>Valor Total:</strong> ${entrega.valor}</p>
+                 <p><strong>Pagamento:</strong> ${entrega.pagamento} (${entrega.jaPago === 'SIM' ? 'JÁ PAGO' : 'COBRAR'})</p>
+                 <p><strong>Troco Necessário:</strong> ${entrega.troco}</p>
+                 <p><strong>Recibo/NFe:</strong> ${entrega.recibo}</p>
+                 <p><strong>Caixa/Origem:</strong> ${entrega.caixa} (Operador: ${entrega.operadorCaixa})</p>
+                 <hr style="margin: 15px 0;">
+                 <h4>Timeline</h4>
+                 <p><strong>Criada em:</strong> ${formatSupabaseDate(entrega.created_at)}</p>
+                 <p><strong>Entregador:</strong> ${entrega.entregador || 'Aguardando Atribuição'}</p>
+                 <p><strong>Saiu em:</strong> ${formatSupabaseDate(entrega.saiuEm)}</p>
+                 <p><strong>Finalizada em:</strong> ${formatSupabaseDate(entrega.finalizadoEm)}</p>
+                 <p><strong>Observações (Entregador):</strong> ${entrega.observacao || 'N/A'}</p>
+             `;
+             
+             if (entrega.motivoFalha) {
+                  content += `<p style="color: #dc3545;"><strong>Motivo Falha/Cancelamento:</strong> ${entrega.motivoFalha || entrega.motivoCancelamento}</p>`;
+             }
+
+             if (entrega.comprovante && entrega.comprovante.startsWith('http')) {
+                 content += `
+                     <h4>📸 Comprovante do Caixa (Antecipado)</h4>
+                     <img src="${entrega.comprovante}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
+                 `;
+             }
+             
+             if (entrega.comprovanteEntregador && entrega.comprovanteEntregador.startsWith('http')) {
+                 content += `
+                     <h4>📸 Comprovante do Entregador</h4>
+                     <img src="${entrega.comprovanteEntregador}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
+                 `;
+             }
+
+             const modalConteudo = document.getElementById('modalConteudo');
+             if (modalConteudo) modalConteudo.innerHTML = content;
+             const modalDetalhes = document.getElementById('modalDetalhes');
+             if (modalDetalhes) modalDetalhes.classList.add('active');
+         }
+
+         function fecharModal() {
+             const modalDetalhes = document.getElementById('modalDetalhes');
+             if (modalDetalhes) modalDetalhes.classList.remove('active');
+         }
+
+        // Funções CRUD
+        async function uploadComprovante(file, nomeCliente, tipoAnexo) {
+            if (!window.supabase) {
+                showMessageBox('Erro', 'Conexão com o Supabase perdida.');
+                return null; 
+            }
+            
+            if (file.size > MAX_IMAGE_SIZE_BYTES) { 
+                 showMessageBox('⚠️ Erro de Imagem', `O arquivo excede o limite de ${MAX_IMAGE_SIZE_BYTES / 1024 / 1024}MB para o upload inicial.`);
+                 return null;
+            }
+
+            const timestamp = new Date().getTime();
+            const nomeNormalizado = nomeCliente.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+            const nomeArquivo = `${tipoAnexo}_${nomeNormalizado}_${timestamp}.jpeg`;
+
+            try {
+                showMessageBox('⏳ Upload...', 'Iniciando o envio da foto para o Storage. Aguarde...');
+                
+                const { error } = await window.supabase.storage
+                    .from(SUPABASE_STORAGE_BUCKET)
+                    .upload(nomeArquivo, file, {
+                        cacheControl: '3600',
+                        contentType: file.type,
+                        upsert: true
+                    });
+
+                if (error) throw error;
+
+                const { data: publicData } = window.supabase.storage
+                    .from(SUPABASE_STORAGE_BUCKET)
+                    .getPublicUrl(nomeArquivo);
+                    
+                customModal.classList.remove('active');
+                return publicData.publicUrl;
+
+            } catch (error) {
+                customModal.classList.remove('active');
+                console.error('Erro no upload para o Storage:', error);
+                showMessageBox('❌ Erro de Upload', `Falha ao enviar a foto. Verifique o limite de tamanho no Storage: ${error.message}.`);
+                return null;
+            }
+        }
+        
+        async function criarEntrega() {
+            if (!window.supabase) return showMessageBox('Erro', 'Supabase não inicializado.');
+            
+            const operadorCaixa = document.getElementById('operadorLogado') ? document.getElementById('operadorLogado').textContent : usuarioLogado;
+            const caixaSelect = document.getElementById('caixaSelect').value; 
+            const caixaMotivo = document.getElementById('caixaMotivoInput').value.trim();
+            const caixa = caixaSelect === 'Outro' ? `Outro: ${caixaMotivo}` : caixaSelect;
+            const nome = document.getElementById('clienteNome').value.trim();
+            const endereco = document.getElementById('clienteEndereco').value.trim();
+            const bairro = document.getElementById('clienteBairro').value.trim();
+            const telefone = document.getElementById('clienteTelefone').value.trim().replace(/\D/g, '');
+            const geladeira = document.getElementById('temGeladeira').value;
+            const forma = document.getElementById('formaPagamento').value;
+            const status = document.getElementById('statusPagamento').value;
+            const valor = document.getElementById('valorTotal').value.trim();
+            const recibo = document.getElementById('numeroRecibo').value.trim();
+            const troco = document.getElementById('valorTroco').value.trim();
+
+            if (!caixa || !nome || !endereco || !bairro || telefone.length < 10 || !geladeira || !status || !valor) {
+                showMessageBox('⚠️ Erro', 'Por favor, preencha todos os campos obrigatórios corretamente!');
+                return;
+            }
+            if (caixaSelect === 'Outro' && !caixaMotivo) {
+                 showMessageBox('⚠️ Erro', 'Por favor, explique o motivo do "Outro" caixa.');
+                 return;
+            }
+            if ((status === 'NÃO' || status === 'SIM') && !forma) {
+                 showMessageBox('⚠️ Erro', 'Selecione a Forma de Pagamento.');
+                 return;
+            }
+            if (forma === 'Dinheiro' && status === 'NÃO' && (!troco || limparMoeda(troco) <= 0 || limparMoeda(troco) <= limparMoeda(valor))) {
+                 showMessageBox('⚠️ Erro', 'Para Dinheiro (Cobrar na entrega), especifique o valor de troco (maior que o total).');
+                 return;
+            }
+
+            let comprovanteUrl = null;
+            const fileInputCaixa = document.getElementById('fotoInput');
+            const fotoFile = fileInputCaixa.files[0];
+            
+            if ((forma === 'Pix' || forma === 'Cartão') && status === 'SIM') {
+                if (!fotoFile) {
+                     showMessageBox('⚠️ Erro', 'Obrigatório anexar o comprovante para pagamentos PIX/Cartão antecipados.');
+                     return;
+                }
+                comprovanteUrl = await uploadComprovante(fotoFile, nome, 'caixa'); 
+                if (!comprovanteUrl) return; 
+            }
+
+            const entrega = {
+                clienteNome: nome,
+                endereco: endereco,
+                bairro: bairro,
+                telefone: telefone,
+                geladeira: geladeira,
+                pagamento: forma,
+                jaPago: status,
+                valor: formatarMoeda(valor), 
+                valorNumerico: limparMoeda(valor), 
+                troco: (forma === 'Dinheiro' && status === 'NÃO' && troco) ? formatarMoeda(troco) : 'Não',
+                recibo: recibo || 'Não Informado',
+                caixa: caixa, 
+                operadorCaixa: operadorCaixa, 
+                comprovante: comprovanteUrl, 
+                status: 'pendente',
+                criadoPor: operadorCaixa, 
+                data: new Date().toLocaleDateString('pt-BR'), 
+                entregador: null,
+                saiuEm: null,
+                finalizadoEm: null,
+                observacao: null,
+                motivoFalha: null,
+                comprovanteEntregador: null
+            };
+
+            try {
+                const { data, error } = await window.supabase
+                    .from(SUPABASE_TABLE)
+                    .insert([entrega])
+                    .select();
+                
+                if (error) throw error;
+
+                const statusPagamento = entrega.jaPago === 'SIM' ? '✅ JÁ PAGO' : '💰 COBRAR';
+                showMessageBox('✅ Sucesso', `Entrega criada com sucesso! Cliente: ${entrega.clienteNome}`);
+
+                document.getElementById('formEntrega').reset();
+                if (document.getElementById('outroCaixaMotivo')) document.getElementById('outroCaixaMotivo').style.display = 'none';
+                if (document.getElementById('fotoComprovante')) document.getElementById('fotoComprovante').style.display = 'none';
+                if (document.getElementById('previewFoto')) document.getElementById('previewFoto').innerHTML = '';
+                if (document.getElementById('trocoGroup')) document.getElementById('trocoGroup').style.display = 'none';
+                if (document.getElementById('formaPagamentoGroup')) document.getElementById('formaPagamentoGroup').style.display = 'none';
+                
+                atualizarTelas(); 
+
+            } catch (error) {
+                console.error("Erro ao salvar entrega no Supabase:", error);
+                showMessageBox('❌ Erro', `Erro ao salvar entrega no Banco de Dados: ${error.message}`);
+            }
+        }
+
+        async function atualizarEntrega(docId, updates) {
+            if (!window.supabase) return false;
+            try {
+                const { error } = await window.supabase
+                    .from(SUPABASE_TABLE)
+                    .update(updates)
+                    .eq('id', docId);
+                
+                if (error) throw error;
+                return true; 
+            } catch (error) {
+                console.error("Erro ao atualizar entrega:", error);
+                showMessageBox('❌ Erro', `Erro ao atualizar entrega: ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function setupSupabaseListener() {
+            if (!window.supabase) return;
+            
+            try {
+                if (realtimeChannel) {
+                    await realtimeChannel.unsubscribe();
+                }
+                
+                let queryBuilder = window.supabase
+                    .from(SUPABASE_TABLE)
+                    .select('*');
+
+                const dataInicial = document.getElementById('dataInicial') ? document.getElementById('dataInicial').value : null;
+                const dataFinal = document.getElementById('dataFinal') ? document.getElementById('dataFinal').value : null;
+                
+                if (dataInicial || dataFinal) {
+                    const dataInicioISO = dataInicial ? new Date(dataInicial + 'T00:00:00Z').toISOString() : null;
+                    const dataFimISO = dataFinal ? new Date(dataFinal + 'T23:59:59Z').toISOString() : null;
+                    
+                    if (dataInicioISO) { queryBuilder = queryBuilder.gte('created_at', dataInicioISO); }
+                    if (dataFimISO) { queryBuilder = queryBuilder.lte('created_at', dataFimISO); }
+                }
+                
+                queryBuilder = queryBuilder.order('created_at', { ascending: false });
+
+                const { data, error } = await queryBuilder;
+                
+                if (error) throw error;
+                
+                todasEntregas = data;
+                console.log(`[Supabase] Dados de entregas carregados. Total: ${todasEntregas.length}`);
+                atualizarTelas(); 
+
+                realtimeChannel = window.supabase.channel('public:entregas')
+                    .on('postgres_changes', 
+                        { event: '*', schema: 'public', table: SUPABASE_TABLE },
+                        async (payload) => { setupSupabaseListener(); } 
+                    )
+                    .subscribe();
+
+            } catch (error) {
+                 console.error("Erro ao configurar listener do Supabase:", error);
+            }
+        }
+
+        function pegarEntrega(docId) {
+            const entregasHoje = obterEntregasFiltradas();
+            const emRotaDoUsuario = entregasHoje.filter(e => e.entregador === usuarioLogado && e.status === 'em rota');
+            
+            if (emRotaDoUsuario.length >= 5) {
+                showMessageBox('🚫 Limite Atingido', 'Você já possui 5 entregas em rota. Finalize algumas antes de pegar mais.');
+                return;
+            }
+
+            showConfirmBox('Confirmação', `Deseja realmente pegar esta entrega? Ela será atribuída a ${usuarioLogado}.`, async () => {
+                if (await atualizarEntrega(docId, { 
+                    status: 'em rota', 
+                    entregador: usuarioLogado, 
+                    saiuEm: new Date().toISOString() 
+                })) {
+                    showMessageBox('✅ Sucesso', 'Entrega atribuída! Boa rota!');
+                }
+            });
+        }
+        
+        function falhaEntregaAcao(docId) {
+            acaoCancelamentoDocId = docId;
+            acaoCancelamentoTipo = 'falha';
+            
+            const btnConfirmar = document.getElementById('btnConfirmarCancelamento');
+            if (btnConfirmar) {
+                btnConfirmar.onclick = confirmarModalCancelamento;
+                btnConfirmar.textContent = 'Registrar Falha';
+                btnConfirmar.classList.remove('danger');
+                btnConfirmar.classList.add('btn-falha'); 
+            }
+            
+            const modalCancelTitle = document.getElementById('modalCancelTitle');
+            if (modalCancelTitle) modalCancelTitle.textContent = '⚠️ Registrar Falha na Entrega';
+            const motivoCancelamentoInput = document.getElementById('motivoCancelamentoInput');
+            if (motivoCancelamentoInput) motivoCancelamentoInput.value = '';
+            const obsCancelamentoTextarea = document.getElementById('obsCancelamentoTextarea');
+            if (obsCancelamentoTextarea) obsCancelamentoTextarea.value = '';
+            const modalCancelamento = document.getElementById('modalCancelamento');
+            if (modalCancelamento) modalCancelamento.classList.add('active');
+        }
+
+        function finalizarEntrega(docId) {
+             const entrega = todasEntregas.find(e => e.id == docId);
+             if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
+
+             if (entrega.jaPago === 'NÃO') {
+                 showConfirmBox('🚨 Cobrança Pendente', `Confirma que o valor ${entrega.valor} foi cobrado do cliente?`, () => {
+                     continuarFinalizarEntrega(docId, entrega);
+                 });
+                 return; 
+             }
+             
+             continuarFinalizarEntrega(docId, entrega);
+        }
+        
+        async function continuarFinalizarEntrega(docId, entrega) {
+             if (entrega.pagamento === 'Pix' || entrega.pagamento === 'Cartão') {
+                 window.entregaParaFinalizarId = docId; 
+                 const anexoInputEntregador = document.getElementById('anexoInputEntregador');
+                 if (anexoInputEntregador) anexoInputEntregador.value = '';
+                 const obsAnexoEntregador = document.getElementById('obsAnexoEntregador');
+                 if (obsAnexoEntregador) obsAnexoEntregador.value = '';
+                 const modalAnexo = document.getElementById('modalAnexo');
+                 if (modalAnexo) modalAnexo.classList.add('active');
+                 
+                 return; 
+             }
+
+             const obs = window.prompt('Observação da entrega (ex: Entregue ao vizinho, Deixado na caixa de correio). (Opcional):');
+             
+             const updates = {
+                 status: 'entregue', 
+                 finalizadoEm: new Date().toISOString(),
+                 observacao: obs,
+                 comprovanteEntregador: 'Não aplicável'
+             };
+
+             if (await atualizarEntrega(docId, updates)) {
+                 showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso!');
+             }
+        }
+        
+        function abrirModalAnexo(docId) {
+            const entrega = todasEntregas.find(e => e.id == docId);
+            if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
+            if (entrega.pagamento !== 'Pix' && entrega.pagamento !== 'Cartão') {
+                showMessageBox('📸 Alerta', 'O comprovante é obrigatório apenas para entregas com pagamento em Pix ou Cartão.');
+                return;
+            }
+            window.entregaParaFinalizarId = docId;
+            const anexoInputEntregador = document.getElementById('anexoInputEntregador');
+            if (anexoInputEntregador) anexoInputEntregador.value = '';
+            const obsAnexoEntregador = document.getElementById('obsAnexoEntregador');
+            if (obsAnexoEntregador) obsAnexoEntregador.value = '';
+            const modalAnexo = document.getElementById('modalAnexo');
+            if (modalAnexo) modalAnexo.classList.add('active');
+        }
+
+        function confirmarAnexo() {
+            const docId = window.entregaParaFinalizarId;
+            const entrega = todasEntregas.find(e => e.id == docId);
+            
+            const fileInput = document.getElementById('anexoInputEntregador');
+            const fotoFile = fileInput && fileInput.files ? fileInput.files[0] : null;
+            const obs = document.getElementById('obsAnexoEntregador') ? document.getElementById('obsAnexoEntregador').value.trim() : '';
+            
+            if (entrega.pagamento === 'Pix' || entrega.pagamento === 'Cartão') {
+                if (!fotoFile) {
+                    showMessageBox('⚠️ Erro', 'Anexo do comprovante é obrigatório.');
+                    return;
+                }
+                
+                finalizarEntregaComAnexo(docId, fotoFile, obs); 
+                fecharModalAnexo();
+
+            } else {
+                 finalizarEntregaComAnexo(docId, null, obs); 
+                 fecharModalAnexo();
+            }
+        }
+
+        async function finalizarEntregaComAnexo(docId, fotoFile, obs) {
+              let comprovanteUrl = 'Não aplicável';
+              const entrega = todasEntregas.find(e => e.id == docId);
+
+              if (fotoFile) { 
+                  comprovanteUrl = await uploadComprovante(fotoFile, entrega.clienteNome, 'entregador');
+                  if (!comprovanteUrl) return; 
+              }
+
+              const updates = {
+                  status: 'entregue', 
+                  finalizadoEm: new Date().toISOString(), 
+                  observacao: obs,
+                  comprovanteEntregador: comprovanteUrl 
+              };
+              
+              if (await atualizarEntrega(docId, updates)) {
+                  showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso!');
+              }
+         }
+        
+        function fecharModalAnexo() {
+            const modalAnexo = document.getElementById('modalAnexo');
+            if (modalAnexo) modalAnexo.classList.remove('active');
+            const anexoInputEntregador = document.getElementById('anexoInputEntregador');
+            if (anexoInputEntregador) anexoInputEntregador.value = '';
+            const obsAnexoEntregador = document.getElementById('obsAnexoEntregador');
+            if (obsAnexoEntregador) obsAnexoEntregador.value = '';
+            window.entregaParaFinalizarId = null;
+        }
+        
+        function cancelarEntrega(docId) {
+            acaoCancelamentoDocId = docId;
+            acaoCancelamentoTipo = 'cancelada';
+            
+            const btnConfirmar = document.getElementById('btnConfirmarCancelamento');
+            if (btnConfirmar) {
+                btnConfirmar.onclick = confirmarModalCancelamento;
+                btnConfirmar.textContent = 'Confirmar Cancelamento';
+                btnConfirmar.classList.remove('btn-falha');
+                btnConfirmar.classList.add('danger');
+            }
+            
+            const modalCancelTitle = document.getElementById('modalCancelTitle');
+            if (modalCancelTitle) modalCancelTitle.textContent = '❌ Cancelar Entrega';
+            const motivoCancelamentoInput = document.getElementById('motivoCancelamentoInput');
+            if (motivoCancelamentoInput) motivoCancelamentoInput.value = '';
+            const obsCancelamentoTextarea = document.getElementById('obsCancelamentoTextarea');
+            if (obsCancelamentoTextarea) obsCancelamentoTextarea.value = '';
+            const modalCancelamento = document.getElementById('modalCancelamento');
+            if (modalCancelamento) modalCancelamento.classList.add('active');
+        }
+
+        async function confirmarModalCancelamento() {
+            const motivo = document.getElementById('motivoCancelamentoInput') ? document.getElementById('motivoCancelamentoInput').value.trim() : '';
+            const obs = document.getElementById('obsCancelamentoTextarea') ? document.getElementById('obsCancelamentoTextarea').value.trim() : '';
+            const docId = acaoCancelamentoDocId;
+            const tipo = acaoCancelamentoTipo;
+
+            if (!motivo) {
+                showMessageBox('⚠️ Erro', 'O Motivo do Cancelamento/Falha é obrigatório.');
+                return;
+            }
+
+            const updates = {
+                status: tipo, 
+                finalizadoEm: new Date().toISOString(),
+                observacao: obs || null,
+            };
+            
+            let sucessoMsg = '';
+            
+            if (tipo === 'cancelada') {
+                 updates.motivoCancelamento = motivo;
+                 updates.canceladoPor = usuarioLogado;
+                 sucessoMsg = `Entrega CANCELADA com sucesso! Motivo: ${motivo}`;
+            } else if (tipo === 'falha') {
+                 updates.motivoFalha = motivo;
+                 sucessoMsg = `Falha registrada com sucesso! Motivo: ${motivo}`;
+            }
+            
+            if (await atualizarEntrega(docId, updates)) {
+                showMessageBox('✅ Sucesso', sucessoMsg);
+                fecharModalCancelamento();
+            }
+        }
+        
+        function fecharModalCancelamento() {
+            const modalCancelamento = document.getElementById('modalCancelamento');
+            if (modalCancelamento) modalCancelamento.classList.remove('active');
+            acaoCancelamentoDocId = null;
+            acaoCancelamentoTipo = null;
+        }
+
+        // Funções de Navegação e Autenticação
+        function mostrarTela(screenId) {
+             document.querySelectorAll('.screen').forEach(screen => {
+                 screen.classList.remove('active');
+             });
+             const screen = document.getElementById(screenId);
+             if (screen) screen.classList.add('active');
+             
+             const logoutBtn = document.getElementById('logoutBtn');
+             if (logoutBtn) {
+                 if (screenId === 'screenInicio') {
+                     logoutBtn.style.display = 'none';
+                 } else {
+                     logoutBtn.style.display = 'block';
+                 }
+             }
+         }
+
+         function voltarInicio() {
+             usuarioLogado = null;
+             tipoUsuario = null;
+             mostrarTela('screenInicio');
+         }
+
+         function logout() {
+             showConfirmBox('🚪 Sair', `Tem certeza que deseja sair do painel ${tipoUsuario}?`, voltarInicio);
+         }
+
+         function mostrarLogin(tipo) {
+             tipoLoginAtual = tipo;
+             const loginTitulo = document.getElementById('loginTitulo');
+             if (loginTitulo) loginTitulo.textContent = `Login ${tipo.toUpperCase()}`;
+             const loginAtendimento = document.getElementById('loginAtendimento');
+             if (loginAtendimento) loginAtendimento.style.display = 'none';
+             const loginSenha = document.getElementById('loginSenha');
+             if (loginSenha) loginSenha.style.display = 'none';
+
+             if (tipo === 'atendimento') {
+                 if (loginAtendimento) loginAtendimento.style.display = 'block';
+                 const select = document.getElementById('atendenteNome');
+                 if (select) {
+                     select.innerHTML = '<option value="">Selecione o Atendente...</option>';
+                     Object.keys(ATENDENTES).sort().forEach(nome => {
+                         select.innerHTML += `<option value="${nome}">${nome}</option>`;
+                     });
+                 }
+             } else {
+                 if (loginSenha) loginSenha.style.display = 'block';
+                 const select = document.getElementById('loginNome');
+                 if (select) {
+                     select.innerHTML = '<option value="">Selecione o Usuário...</option>';
+                     const users = tipo === 'fiscal' ? GESTORES : ENTREGADORES;
+                     Object.keys(users).sort().forEach(nome => {
+                         select.innerHTML += `<option value="${nome}">${nome}</option>`;
+                     });
+                 }
+             }
+             mostrarTela('screenLogin');
+         }
+         
+         function fazerLogin() {
+             const loginNome = document.getElementById('loginNome');
+             const loginSenhaInput = document.getElementById('loginSenhaInput');
+             const nome = loginNome ? loginNome.value : '';
+             const senha = loginSenhaInput ? loginSenhaInput.value : '';
+             const users = tipoLoginAtual === 'fiscal' ? GESTORES : ENTREGADORES;
+             
+             if (!nome || !senha) {
+                 showMessageBox('⚠️ Erro', 'Nome e senha são obrigatórios.');
+                 return;
+             }
+
+             if (users[nome] && users[nome].senha === senha) {
+                 usuarioLogado = nome;
+                 tipoUsuario = tipoLoginAtual;
+                 if (loginSenhaInput) loginSenhaInput.value = '';
+                 
+                 if (tipoUsuario === 'entregador') {
+                     const nomeEntregador = document.getElementById('nomeEntregador');
+                     if (nomeEntregador) nomeEntregador.textContent = usuarioLogado;
+                     mostrarTela('screenEntregador');
+                 } else if (tipoUsuario === 'fiscal') {
+                     const nomeFiscal = document.getElementById('nomeFiscal');
+                     if (nomeFiscal) nomeFiscal.textContent = usuarioLogado;
+                     irParaDashboardFiscal();
+                 }
+                 atualizarTelas();
+             } else {
+                 showMessageBox('❌ Erro', 'Usuário ou senha inválidos.');
+             }
+         }
+         
+         function loginAtendimento() {
+             const atendenteNome = document.getElementById('atendenteNome');
+             const atendenteSenha = document.getElementById('atendenteSenha');
+             const nome = atendenteNome ? atendenteNome.value : '';
+             const senha = atendenteSenha ? atendenteSenha.value : '';
+             
+             if (!nome || !senha) {
+                 showMessageBox('⚠️ Erro', 'Nome e senha são obrigatórios.');
+                 return;
+             }
+
+             if (ATENDENTES[nome] && ATENDENTES[nome].senha === senha) {
+                 usuarioLogado = nome;
+                 tipoUsuario = 'atendimento';
+                 const operadorLogado = document.getElementById('operadorLogado');
+                 if (operadorLogado) operadorLogado.textContent = usuarioLogado;
+                 if (atendenteSenha) atendenteSenha.value = '';
+                 
+                 mostrarTela('screenCriarEntrega');
+             } else {
+                 showMessageBox('❌ Erro', 'Atendente ou senha inválidos.');
+             }
+         }
+         
+         function irParaDashboardFiscal() {
+             mostrarTela('screenFiscal');
+             const dataFiscal = document.getElementById('dataFiscal');
+             const dataInicial = document.getElementById('dataInicial');
+             const dataFinal = document.getElementById('dataFinal');
+             if (dataFiscal && dataInicial && dataFinal) {
+                 dataFiscal.textContent = `Dados de: ${dataInicial.value || 'Início'} até ${dataFinal.value || 'Hoje'}`;
+             }
+             atualizarTelas();
+         }
+         
+         function mostrarPerformanceEntregadores() {
+             const performancePeriodo = document.getElementById('performancePeriodo');
+             const dataInicial = document.getElementById('dataInicial');
+             const dataFinal = document.getElementById('dataFinal');
+             if (performancePeriodo && dataInicial && dataFinal) {
+                 performancePeriodo.textContent = `Período: ${dataInicial.value || 'Início'} até ${dataFinal.value || 'Hoje'}`;
+             }
+             carregarPerformanceEntregadores();
+             mostrarTela('screenPerformance');
+         }
+
+        function atualizarTelas() {
+            if (tipoUsuario === 'entregador') {
+                carregarEntregasEntregador();
+            } else if (tipoUsuario === 'fiscal') {
+                carregarDashboardFiscal();
+            } else if (tipoUsuario === 'atendimento') {
+                mostrarTela('screenCriarEntrega');
+            }
+        }
         
         // --- FUNÇÃO DE INICIALIZAÇÃO MAIS RESILIENTE (CORREÇÃO FINAL) ---
         
@@ -78,28 +1823,33 @@
         }
 
         window.initSupabase = function() {
-            // CHECA SE O OBJETO SUPABASE EXISTE NO ESCOPO GLOBAL
-            if (typeof supabase !== 'undefined' && supabase.createClient) {
-                try {
-                    if (window.supabase) return;
-                    window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                    console.log("Supabase inicializado e conectado!");
-                    window.init(); 
-                } catch(error) {
-                    // Erro na criação do cliente (chaves ou URL)
-                    console.error("Erro na conexão Supabase:", error);
-                    const loader = document.getElementById('loader');
-                    if (loader) loader.innerHTML = `<h3 style="color: #d63031;">❌ Erro de Conexão</h3><p>Verifique as chaves ou URL. Detalhes: ${error.message}</p>`;
+            try {
+                if (window.supabase) return;
+                
+                // Tenta criar o cliente imediatamente, usando o objeto global 'supabase'
+                if (typeof supabase === 'undefined' || !supabase.createClient) {
+                    throw new Error("Objeto 'supabase' não encontrado.");
                 }
-            } else {
-                // TENTA NOVAMENTE APÓS 500MS
+                
+                window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                console.log("Supabase inicializado e conectado!");
+                window.init(); 
+
+            } catch (error) {
+                // Se falhou (por timing ou erro de credencial), tenta novamente 1 vez
                 initializationAttempts++;
-                if (initializationAttempts < MAX_ATTEMPTS) {
+                if (initializationAttempts < 2) {
                     setTimeout(window.initSupabase, 500); 
-                } else {
-                    // FALHA FATAL APÓS VÁRIAS TENTATIVAS
-                    const loader = document.getElementById('loader');
-                    if (loader) loader.innerHTML = `<h3 style="color: #d63031;">❌ Erro Crítico</h3><p>O SDK do Supabase não foi carregado. Verifique o arquivo 'supabase.js' na sua pasta.</p>`;
+                    return;
+                }
+                
+                console.error("Erro fatal ao inicializar Supabase:", error);
+                const loader = document.getElementById('loader');
+                if (loader) {
+                    loader.innerHTML = `
+                        <h3 style="color: #d63031;">❌ Erro de Conexão</h3>
+                        <p>Não foi possível iniciar o Supabase. Verifique a URL e a chave. Detalhes: ${error.message}</p>
+                    `;
                 }
             }
         };
@@ -111,7 +1861,11 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">...</div>
+        <div class="header">
+            <button class="logout-btn" id="logoutBtn" onclick="logout()" style="display:none;">🚪 Sair</button>
+            <h1>🚚 Entregas Rio Branco</h1>
+            <p>Sistema de Gestão de Entregas</p>
+        </div>
 
         <div class="content">
             <div id="loader" style="text-align: center; padding: 50px;">
@@ -120,8 +1874,348 @@
             </div>
             
             <div id="appContainer" style="display:none;">
+                <div id="screenInicio" class="screen active">
+                    <h2>Selecione seu Painel</h2>
+                    
+                    <button class="role-btn" onclick="mostrarLogin('atendimento')">
+                        📦 CRIAR ENTREGA (CAIXA)
+                    </button>
+                    <button class="role-btn" onclick="mostrarLogin('entregador')">
+                        🚴 ENTREGADOR
+                    </button>
+                     <button class="role-btn" onclick="mostrarLogin('fiscal')">
+                        📊 GESTÃO (ADM)
+                    </button>
+                </div>
+
+                <div id="screenLogin" class="screen">
+                    <h2 id="loginTitulo">Login</h2>
+                    
+                    <div id="loginAtendimento" style="display:none;">
+                         <div class="form-group">
+                             <label>Nome do Atendente/Caixa *</label>
+                             <select id="atendenteNome"></select>
+                         </div>
+                        <div class="form-group">
+                             <label>Senha *</label>
+                             <input type="password" id="atendenteSenha" placeholder="Digite sua senha">
+                         </div>
+                         <button class="btn-primary" onclick="loginAtendimento()">Entrar →</button>
+                    </div>
+                    
+                    <div id="loginSenha" style="display:none;">
+                        <div class="form-group">
+                            <label>Nome / Usuário</label>
+                            <select id="loginNome"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Senha</label>
+                            <input type="password" id="loginSenhaInput" placeholder="Digite sua senha">
+                        </div>
+                        <button class="btn-primary" onclick="fazerLogin()">Entrar →</button>
+                    </div>
+
+                    <button class="btn-voltar" onclick="voltarInicio()">← Voltar</button>
+                </div>
+
+                <div id="screenCriarEntrega" class="screen">
+                    <h2>Criar Entrega</h2>
+                    <form id="formEntrega">
+                        <p style="text-align: center; margin-bottom: 15px;">Operador Logado: <strong id="operadorLogado"></strong></p>
+                        
+                        <div class="form-group">
+                            <label>Caixa (Onde o pedido foi fechado) *</label>
+                            <select id="caixaSelect" required onchange="toggleOutroCaixa()">
+                                <option value="">Selecione o Caixa...</option>
+                                <option value="Caixa 1">Caixa 1</option>
+                                <option value="Caixa 2">Caixa 2</option>
+                                <option value="Caixa 3">Caixa 3</option>
+                                <option value="Outro">Outro (Explique o motivo)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" id="outroCaixaMotivo" style="display: none;">
+                            <label>Motivo do 'Outro' Caixa *</label>
+                            <input type="text" id="caixaMotivoInput" placeholder="Ex: Caixa 4 / Balcão">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Nome do Cliente *</label>
+                            <input type="text" id="clienteNome" required placeholder="Nome completo">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Endereço Completo *</label>
+                            <textarea id="clienteEndereco" required placeholder="Rua, número, complemento"></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Bairro *</label>
+                                <input type="text" id="clienteBairro" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Telefone *</label>
+                                <input type="tel" id="clienteTelefone" required placeholder="(66) 99999-9999">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Geladeira? (Produtos refrigerados) *</label>
+                            <select id="temGeladeira" required>
+                                <option value="">Selecione...</option>
+                                <option value="Sim">Sim</option>
+                                <option value="Não">Não</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Status do Pagamento *</label>
+                                <select id="statusPagamento" required onchange="togglePagamentoFields()">
+                                    <option value="NÃO">💰 Cobrar na entrega</option>
+                                    <option value="SIM">✅ Já Pago (Antecipado)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="formaPagamentoGroup" style="display: none;">
+                                <label>Forma de Pagamento *</label>
+                                <select id="formaPagamento" required onchange="togglePagamentoFields()">
+                                    <option value="">Selecione...</option>
+                                    <option value="Dinheiro">Dinheiro</option>
+                                    <option value="Pix">Pix</option>
+                                    <option value="Cartão">Cartão</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group" id="trocoGroup" style="display: none;">
+                            <label>Precisa de Troco Para (R$)? *</label>
+                            <input type="text" id="valorTroco" placeholder="Valor que o entregador deve levar para troco">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Valor Total *</label>
+                                <input type="text" id="valorTotal" required placeholder="R$ 0,00">
+                            </div>
+                            <div class="form-group">
+                                <label>Recibo/NFe</label>
+                            <input type="number" id="numeroRecibo" placeholder="Nº da NFe/Recibo (Opcional)">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" id="fotoComprovante" style="display: none;">
+                            <label>📸 Comprovante (Max: 5MB) *</label>
+                            <input type="file" id="fotoInput" accept="image/*" capture="environment" style="border: none; padding: 8px;">
+                            <div id="previewFoto" style="margin-top: 10px;"></div>
+                        </div>
+
+                        <button type="button" onclick="criarEntrega()" class="btn-primary">📤 Enviar Nova Entrega</button>
+                    </form>
+                    <button class="btn-voltar" onclick="logout()">← Sair</button>
+                </div>
+
+                <div id="screenEntregador" class="screen">
+                    <h2>🚴 Minhas Entregas</h2>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <p style="color: #666;">Olá, <strong id="nomeEntregador"></strong>! Entregas em rota: <span id="entregasEmRotaCount">0</span></p>
+                    </div>
+                    
+                    <h3 style="color: #3d4b7a; margin: 20px 0 10px;">📋 Fila de Entregas (Disponíveis)</h3>
+                    <div id="listaEntregasPendentes"></div>
+
+                    <h3 style="color: #3d4b7a; margin: 20px 0 10px;">🚴 Em Rota (Minhas)</h3>
+                    <div id="listaEntregasEmRota"></div>
+
+                    <h3 style="color: #3d4b7a; margin: 20px 0 10px;">✅ Histórico de Entregas Hoje</h3>
+                    <div id="listaEntregasEntregues"></div>
+
+                    <button class="btn-voltar" onclick="logout()">← Sair</button>
+                </div>
+
+                <div id="screenFiscal" class="screen">
+                    <h2>📊 Dashboard - Gestão</h2>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <p style="color: #666;">Gestor: <strong id="nomeFiscal"></strong></p>
+                        <p style="color: #666;" id="dataFiscal"></p>
+                    </div>
+                    
+                    <h4 style="color: #d63031;">Filtro de Período</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Data Inicial:</label>
+                            <input type="date" id="dataInicial" onchange="setupSupabaseListener()">
+                        </div>
+                        <div class="form-group">
+                            <label>Data Final:</label>
+                            <input type="date" id="dataFinal" onchange="setupSupabaseListener()">
+                        </div>
+                    </div>
+                    
+                    <div class="stats-grid full">
+                        <div class="stat-card" style="border-color: #28a745;">
+                            <div class="stat-number green" id="totalArrecadado">R$ 0,00</div>
+                            <div class="stat-label">Valor Total das Entregas Finalizadas no Período</div>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalPendentes">0</div>
+                            <div class="stat-label">Pendentes</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalEmRota">0</div>
+                            <div class="stat-label">Em Rota</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalEntregues">0</div>
+                            <div class="stat-label">Entregues (Sucesso)</div>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <h3>Distribuição de Entregas por Status</h3>
+                        <div id="statusChart"></div>
+                    </div>
+                    
+                    <button class="btn-primary" onclick="mostrarPerformanceEntregadores()">🚴 Performance por Entregador</button>
+                    <button class="btn-primary" onclick="mostrarTela('screenCriarEntrega')">📦 Criar Nova Entrega</button>
+                    <button class="btn-voltar" style="background: #3d4b7a;" onclick="carregarGestaoAdm()">⚙️ Gestão de Usuários</button>
+
+                    <h3 style="color: #3d4b7a; margin: 20px 0 10px;">Todas as Entregas no Período</h3>
+                    <div id="listaTodasEntregas"></div>
+
+                    <button class="btn-voltar" onclick="logout()">← Sair</button>
+                </div>
+                
+                <div id="screenPerformance" class="screen">
+                    <h2>🏆 Performance dos Entregadores</h2>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <p style="color: #666;" id="performancePeriodo"></p>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <h3>Métricas de Entrega</h3>
+                        <div id="performanceList">
+                            <table class="performance-table">
+                                <thead>
+                                    <tr>
+                                        <th>Entregador</th>
+                                        <th>Atribuídas</th>
+                                        <th>Entregues</th>
+                                        <th>Sucesso (%)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="performanceBody">
+                                    <tr><td colspan="4" style="text-align: center;">Carregando dados...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <button class="btn-voltar" onclick="irParaDashboardFiscal()">← Voltar ao Dashboard</button>
+                </div>
+                
+                <div id="screenAdmin" class="screen">
+                    <h2>⚙️ Gestão de Entregadores</h2>
+                    
+                    <h4 style="color: #3d4b7a;">Selecione o Entregador para Gerenciar:</h4>
+                    <div class="form-group">
+                        <select id="entregadorGestaoSelect" onchange="carregarDetalhesGestao()"></select>
+                    </div>
+
+                    <div id="gestaoDetalhesContainer">
+                        <div id="gestaoCard" class="gestao-card" style="display:none;">
+                            <p>Colaborador: <strong><span id="colabGestaoNome"></span></strong></p>
+                            <p>Senha: <strong><span id="colabGestaoSenha"></span></strong></p>
+                            <h3 style="margin-top: 10px;">Pontuação Atual: <span id="colabGestaoPontos" style="color: #d63031;">0 Pts</span></h3>
+                            
+                            <div class="gestao-actions-grid">
+                                <button class="btn-add-points" onclick="ajustarPontosEntregador('adicionar')">➕ Adicionar Pontos</button>
+                                <button class="btn-remove-points" onclick="ajustarPontosEntregador('remover')">➖ Retirar Pontos</button>
+                                <button class="btn-small btn-reset-senha" onclick="resetarSenhaEntregador()">🔒 Resetar Senha</button>
+                                <button class="btn-small btn-remover-user" onclick="removerEntregadorAcao()">🗑️ Remover Usuário</button>
+                            </div>
+                        </div>
+                        
+                        <h4 style="color: #3d4b7a; margin: 20px 0 10px;">Lista de Entregadores</h4>
+                        <div id="listaEntregadoresAdm"></div>
+                    </div>
+
+                    <h4 style="color: #3d4b7a;">➕ Adicionar Novo Entregador</h4>
+                    <div class="form-group">
+                        <input type="text" id="novoEntregadorNome" placeholder="Nome do Entregador">
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="novoEntregadorSenha" placeholder="Senha">
+                    </div>
+                    <div class="form-group">
+                        <input type="tel" id="novoEntregadorTelefone" placeholder="Telefone (opcional)">
+                    </div>
+                    <button class="btn-primary" onclick="adicionarEntregador()">Adicionar</button>
+
+
+                    <button class="btn-voltar" onclick="irParaDashboardFiscal()">← Voltar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="customModal" class="custom-modal">
+        <div class="custom-modal-content">
+            <h4 id="modalTitle"></h4>
+            <p id="modalMessage"></p>
+            <div id="modalButtons" class="modal-buttons">
                 </div>
         </div>
     </div>
-    </body>
+    
+    <div id="modalCancelamento" class="custom-modal">
+        <div class="custom-modal-content wide">
+            <h4 id="modalCancelTitle"></h4>
+            <div class="form-group">
+                <label for="motivoCancelamentoInput">Motivo do Cancelamento/Falha *</label>
+                <input type="text" id="motivoCancelamentoInput" placeholder="Ex: Cliente ausente / Endereço incorreto" required>
+            </div>
+            <div class="form-group">
+                <label for="obsCancelamentoTextarea">Observações Adicionais (Opcional)</label>
+                <textarea id="obsCancelamentoTextarea" placeholder="Detalhes importantes para o fiscal..."></textarea>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn secondary" onclick="fecharModalCancelamento()">↩️ Cancelar</button>
+                <button class="modal-btn danger" id="btnConfirmarCancelamento">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="modalDetalhes" class="detalhes-modal">
+        <div class="detalhes-content">
+            <button class="btn-fechar" onclick="fecharModal()">×</button>
+            <div id="modalConteudo"></div>
+        </div>
+    </div>
+    
+    <div id="modalAnexo" class="detalhes-modal">
+        <div class="detalhes-content">
+            <h3 style="color: #3d4b7a;">📸 Anexar Comprovante (Max: 5MB)</h3>
+            <p style="margin-bottom: 15px; color: #d63031;">Necessário para finalizar a entrega (Pix/Cartão).</p>
+            
+            <input type="file" id="anexoInputEntregador" accept="image/*" capture="environment">
+            
+            <div class="form-group" style="margin-top: 20px;">
+                <label>Observações (Opcional):</label>
+                <textarea id="obsAnexoEntregador" placeholder="Observações sobre a entrega"></textarea>
+            </div>
+            
+            <button class="btn-primary" onclick="confirmarAnexo()">✅ Confirmar Anexo</button>
+            <button class="btn-voltar" onclick="fecharModalAnexo()">↩️ Cancelar</button>
+        </div>
+    </div>
+
+    <div class="footer">
+        © 2025 AutoVizion. Todos os direitos reservados. Soluções inteligentes em automação e marketing digital.
+    </div>
+</body>
 </html>
