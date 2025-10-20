@@ -424,9 +424,19 @@
                 salvarEntregadores(); // Salva todos os arrays padrão (ENTREGADORES, ATENDENTES, GESTORES)
             } else {
                 // Adiciona fallback robusto caso o JSON parse retorne null devido a dados corrompidos
-                ENTREGADORES = JSON.parse(entregadoresSalvos) || {};
-                ATENDENTES = JSON.parse(atendentesSalvos) || {};
-                GESTORES = JSON.parse(gestoresSalvos) || {};
+                // VERIFICAÇÃO ADICIONAL: Garante que os objetos não fiquem vazios se o localStorage estiver limpo.
+                const parsedEntregadores = JSON.parse(entregadoresSalvos);
+                const parsedAtendentes = JSON.parse(atendentesSalvos);
+                const parsedGestores = JSON.parse(gestoresSalvos);
+                
+                ENTREGADORES = (parsedEntregadores && Object.keys(parsedEntregadores).length > 0) ? parsedEntregadores : { 'Carlos': { senha: '587596', telefone: '66996005936', pontos: 100, historicoPontos: [] }, 'Cadu': { senha: '1228', telefone: '66999999999', pontos: 50, historicoPontos: [] }, 'Jonatan': { senha: '1234', telefone: '66988888888', pontos: 0, historicoPontos: [] } };
+                ATENDENTES = (parsedAtendentes && Object.keys(parsedAtendentes).length > 0) ? parsedAtendentes : { 'Katia': { senha: '1234' }, 'Maria Eduarda': { senha: '1234' }, 'Andre Lopes': { senha: '1234' }, 'Hugo Aguiar': { senha: '1234' }, 'Cadu': { senha: '1234' }, 'Junior': { senha: '1234' }, 'Marilu': { senha: '1234' } };
+                GESTORES = (parsedGestores && Object.keys(parsedGestores).length > 0) ? parsedGestores : { 'Cadu': { senha: '1228' }, 'Mari': { senha: '2992' }, 'Junior': { senha: '0701' }, 'Carlos': { senha: '5875' } };
+                
+                // Força o salvamento dos padrões se tiverem sido recriados
+                if (Object.keys(JSON.parse(entregadoresSalvos) || {}).length === 0 || Object.keys(JSON.parse(atendentesSalvos) || {}).length === 0 || Object.keys(JSON.parse(gestoresSalvos) || {}).length === 0) {
+                     salvarEntregadores();
+                }
             }
         }
 
