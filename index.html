@@ -16,6 +16,7 @@
         const SUPABASE_URL = 'https://rwgkfpgzwplmhnpezvnw.supabase.co'; // CHAVE DO UTILIZADOR INSERIDA
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3Z2tmcGd6d3BsbWhucGV6dm53Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA3OTE5MDUsImV4cCI6MjA3NjM2NzkwNX0.CtuSkk_AJADg8CXqSuUsHncqVXdVTIazs37L-xKjIkY'; // CHAVE ANON REAL DO UTILIZADOR INSERIDA
         const SUPABASE_TABLE = 'entregas'; 
+        const SUPABASE_HISTORICO_TABLE = 'entregas_historico'; // NOVA CONSTANTE PARA A TABELA DE HISTÓRICO
         const SUPABASE_STORAGE_BUCKET = 'entregas-comprovantes'; 
         
         // --- VARIÁVEIS DE CONEXÃO ---
@@ -228,6 +229,13 @@
              return new Date(dateString).toLocaleString('pt-BR');
         }
         
+        // Função utilitária para formatar a data para o cabeçalho (DD/MM/YYYY)
+        function formatarDataParaCabecalho(isoDateString) {
+            if (!isoDateString) return 'N/A';
+            const date = new Date(isoDateString);
+            return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+
         function gerarIdUnico() {
             // Gera um ID longo (timestamp + random) que é único para o LocalStorage
             return Date.now() + Math.floor(Math.random() * 10000);
@@ -253,6 +261,7 @@
             // Não carrega mais entregas daqui, apenas dados de usuários.
         }
         
+        // --- FUNÇÃO DE OBTENÇÃO E FILTRAGEM DE ENTREGAS (AJUSTADA) ---
         function obterEntregasFiltradas() {
             let entregasFiltradas = todasEntregas.slice(); 
             
@@ -275,19 +284,28 @@
                 const hoje = new Date().toLocaleDateString('pt-BR');
                 // Filtra apenas as entregas criadas hoje para o painel do entregador
                 entregasFiltradas = entregasFiltradas.filter(e => new Date(e.created_at).toLocaleDateString('pt-BR') === hoje); 
+
+                // ORDENAÇÃO PARA ENTREGADOR: Prioridade URGÊNCIA, depois Data de Criação (mais recente primeiro)
+                return entregasFiltradas.sort((a, b) => {
+                    // 1. PRIORIDADE MÁXIMA PARA URGENTE
+                    if (a.urgente === 'Sim' && b.urgente === 'Não') return -1;
+                    if (a.urgente === 'Não' && b.urgente === 'Sim') return 1;
+                    
+                    // 2. DESEMPATE (Mais recente primeiro) - Para todas as listas
+                    return new Date(b.created_at) - new Date(a.created_at);
+                }); 
+
+            } else {
+                 // ORDENAÇÃO PARA FISCAL/ATENDIMENTO (Histórico/Geral): Apenas por Data de Criação (mais recente primeiro)
+                 // Ignora a urgência na ordenação da lista, como solicitado (Histórico segue ordem numérica/cronológica)
+                 return entregasFiltradas.sort((a, b) => {
+                     // Mais recente primeiro (decrescente) para manter o displayId sequencial visualmente
+                     return new Date(b.created_at) - new Date(a.created_at);
+                 });
             }
-            
-            return entregasFiltradas.sort((a, b) => {
-                if (a.urgente === 'Sim' && b.urgente === 'Não') return -1;
-                if (a.urgente === 'Não' && b.urgente === 'Sim') return 1;
-                
-                // Tentativa de ordenação final (usando created_at se for possível)
-                return new Date(b.created_at) - new Date(a.created_at);
-            }); 
         }
 
-        // --- COPIAR ENDEREÇO (SUBSTITUI O MAPS) ---
-        window.copiarEndereco = function(endereco, bairro) {
+        function copiarEndereco(endereco, bairro) {
             const enderecoCompleto = `${endereco}, ${bairro}, Garça, SP, Brasil`; 
             
             const tempInput = document.createElement('textarea');
@@ -368,7 +386,21 @@
             initializeModalElements();
             carregarDadosLocais(); // Carrega usuários (LocalStorage)
             setupSupabaseListener(); // Inicia o carregamento de entregas (Supabase)
-            // ... (Resto da lógica mantida) ...
+            
+            // NOVO: Define o filtro de data padrão para os últimos 30 dias na inicialização
+            const dataFinalInput = document.getElementById('dataFinal');
+            const dataInicialInput = document.getElementById('dataInicial');
+            
+            if (dataFinalInput && dataInicialInput) {
+                const hoje = new Date();
+                const trintaDiasAtras = new Date(hoje);
+                trintaDiasAtras.setDate(hoje.getDate() - 30);
+
+                const formatDate = (date) => date.toISOString().split('T')[0];
+                
+                dataFinalInput.value = formatDate(hoje);
+                dataInicialInput.value = formatDate(trintaDiasAtras);
+            }
             
             const valorTotalInput = document.getElementById('valorTotal');
             const isentarTaxaCheckbox = document.getElementById('isentarTaxa');
@@ -391,9 +423,10 @@
             if (!entregadoresSalvos) {
                 salvarEntregadores(); // Salva todos os arrays padrão (ENTREGADORES, ATENDENTES, GESTORES)
             } else {
-                ENTREGADORES = JSON.parse(entregadoresSalvos);
-                ATENDENTES = JSON.parse(atendentesSalvos);
-                GESTORES = JSON.parse(gestoresSalvos);
+                // Adiciona fallback robusto caso o JSON parse retorne null devido a dados corrompidos
+                ENTREGADORES = JSON.parse(entregadoresSalvos) || {};
+                ATENDENTES = JSON.parse(atendentesSalvos) || {};
+                GESTORES = JSON.parse(gestoresSalvos) || {};
             }
         }
 
@@ -598,7 +631,6 @@
                 }
                 
                 // 1. Puxa todos os dados e ordena (para garantir a ordem correta do displayId)
-                // Usamos 'id' para ordenação garantida no DB, já que 'created_at' pode estar com problema de nome
                 let { data, error } = await window.supabaseClient
                     .from(SUPABASE_TABLE)
                     .select('*')
@@ -607,10 +639,11 @@
                 if (error) throw error;
                 
                 // 2. Cria o displayId sequencialmente no Frontend (para a UI)
-                // CORREÇÃO: Acessa o nome do cliente pela chave minúscula (clientenome)
+                // O displayId é gerado sequencialmente (#1, #2, #3...) com base na ordem cronológica de criação.
+                // O .reverse() garante que o item mais recente tenha o displayId mais alto e apareça em primeiro.
                 todasEntregas = data.map((e, index) => ({
                     ...e,
-                    displayId: `#${index + 1}`, // Adiciona o ID de exibição sequencial
+                    displayId: `#${index + 1}`, // Adiciona o ID de exibição sequencial (1, 2, 3...)
                     // Renomeia chaves do banco (minúsculas) para o padrão do frontend (camelCase)
                     clienteNome: e.clientenome,
                     valorNumerico: e.valornumerico,
@@ -646,39 +679,6 @@
             } catch (error) {
                  console.error("Erro ao configurar listener do Supabase:", error);
             }
-        }
-
-        function obterEntregasFiltradas() {
-            let entregasFiltradas = todasEntregas.slice(); 
-            
-            const dataInicialStr = document.getElementById('dataInicial') ? document.getElementById('dataInicial').value : null;
-            const dataFinalStr = document.getElementById('dataFinal') ? document.getElementById('dataFinal').value : null;
-
-            if (dataInicialStr || dataFinalStr) {
-                const dataInicio = dataInicialStr ? new Date(dataInicialStr + 'T00:00:00') : null;
-                const dataFim = dataFinalStr ? new Date(dataFinalStr + 'T23:59:59') : null;
-
-                entregasFiltradas = entregasFiltradas.filter(e => {
-                    const dataEntrega = new Date(e.created_at);
-                    const isAposInicio = dataInicio ? dataEntrega >= dataInicio : true;
-                    const isAntesFim = dataFim ? dataEntrega <= dataFim : true;
-                    return isAposInicio && isAntesFim;
-                });
-            }
-            
-            if (tipoUsuario === 'entregador') {
-                const hoje = new Date().toLocaleDateString('pt-BR');
-                // Filtra apenas as entregas criadas hoje para o painel do entregador
-                entregasFiltradas = entregasFiltradas.filter(e => new Date(e.created_at).toLocaleDateString('pt-BR') === hoje); 
-            }
-            
-            return entregasFiltradas.sort((a, b) => {
-                if (a.urgente === 'Sim' && b.urgente === 'Não') return -1;
-                if (a.urgente === 'Não' && b.urgente === 'Sim') return 1;
-                
-                // Tentativa de ordenação final (usando created_at se for possível)
-                return new Date(b.created_at) - new Date(a.created_at);
-            }); 
         }
 
         function copiarEndereco(endereco, bairro) {
@@ -754,7 +754,10 @@
                 
                 const select = document.getElementById('atendenteNome');
                 select.innerHTML = '<option value="">Selecione seu nome...</option>';
-                Object.keys(ATENDENTES).forEach(nome => {
+                
+                // FIX: Adiciona fallback para objeto vazio caso ATENDENTES seja null/undefined
+                const atendentes = ATENDENTES || {};
+                Object.keys(atendentes).forEach(nome => {
                     const opt = document.createElement('option');
                     opt.value = nome;
                     opt.textContent = nome;
@@ -768,7 +771,9 @@
                 select.innerHTML = '<option value="">Selecione...</option>';
                 
                 const usuarios = tipo === 'entregador' ? ENTREGADORES : GESTORES;
-                Object.keys(usuarios).forEach(nome => {
+                // FIX: Adiciona fallback para objeto vazio caso ENTREGADORES/GESTORES seja null/undefined
+                const userList = usuarios || {}; 
+                Object.keys(userList).forEach(nome => {
                     const opt = document.createElement('option');
                     opt.value = nome;
                     opt.textContent = nome;
@@ -893,6 +898,7 @@
             if (emRota.length === 0) {
                 listaEmRota.innerHTML = '<div class="empty-state"><p>Você não possui entregas em rota.</p></div>';
             } else {
+                // A primeira da listaEmRota, após a ordenação com urgência, é a próxima
                 listaEmRota.innerHTML = emRota.map((e, index) => criarCardEntrega(e, 'emrota', index === 0)).join(''); 
             }
             
@@ -1088,7 +1094,7 @@
             `;
         }
 
-
+        // --- FUNÇÃO CENTRAL DE RENDERIZAÇÃO DO FISCAL (AJUSTADA) ---
         function carregarDashboardFiscal() {
             const entregas = obterEntregasFiltradas();
             
@@ -1108,15 +1114,62 @@
             
             renderizarGrafico(entregas);
             
-            const listaCompleta = document.getElementById('listaTodasEntregas');
-            if (entregas.length === 0) {
-                listaCompleta.innerHTML = '<div class="empty-state"><p>Nenhuma entrega no período selecionado.</p></div>';
-            } else {
-                listaCompleta.innerHTML = entregas.map(e => criarCardEntregaFiscal(e)).join('');
-            }
+            // NOVO: Renderiza a lista com agrupamento por data
+            renderizarEntregasAgrupadas(entregas);
         }
         
-        function criarCardEntregaFiscal(e) {
+        // NOVO: Função para agrupar e renderizar no Fiscal
+        function renderizarEntregasAgrupadas(entregas) {
+             const listaCompleta = document.getElementById('listaTodasEntregas');
+             listaCompleta.innerHTML = '';
+             
+             if (entregas.length === 0) {
+                 listaCompleta.innerHTML = '<div class="empty-state"><p>Nenhuma entrega no período selecionado.</p></div>';
+                 return;
+             }
+             
+             // Agrupa as entregas por data de criação (formato DD/MM/YYYY)
+             const gruposPorData = entregas.reduce((acc, entrega) => {
+                 const dataKey = formatarDataParaCabecalho(entrega.created_at);
+                 if (!acc[dataKey]) {
+                     acc[dataKey] = [];
+                 }
+                 acc[dataKey].push(entrega);
+                 return acc;
+             }, {});
+             
+             // Renderiza cada grupo de data (Mantém a ordem decrescente, pois as entregas já vêm ordenadas)
+             for (const data in gruposPorData) {
+                 const grupoDiv = document.createElement('div');
+                 grupoDiv.className = 'data-group-container';
+                 
+                 // Calcula o resumo do dia
+                 const grupo = gruposPorData[data];
+                 const totalDia = grupo.filter(e => e.status === 'fechada').reduce((sum, e) => sum + (e.valorACobrarNumerico || 0), 0);
+                 const ativasDia = grupo.filter(e => e.status !== 'fechada' && e.status !== 'cancelada' && e.status !== 'falha').length;
+                 
+                 // CRIA O CABEÇALHO DO GRUPO
+                 grupoDiv.innerHTML = `
+                    <div class="data-group-header">
+                        <h4>📅 Entregas do dia: ${data}</h4>
+                        <span class="group-summary">
+                            💰 Fechado: ${formatarMoeda(totalDia)} | 
+                            ${ativasDia > 0 ? `<span style="color: #dc3545;">🚨 Ativas/Pendentes: ${ativasDia}</span>` : '✅ Dia Fechado'}
+                        </span>
+                    </div>
+                 `;
+                 
+                 // Adiciona os itens da lista
+                 grupo.forEach(e => {
+                     grupoDiv.innerHTML += criarItemListaFiscal(e);
+                 });
+                 
+                 listaCompleta.appendChild(grupoDiv);
+             }
+        }
+
+        // NOVO: Função para criar o item de lista simples para o Dashboard Fiscal
+        function criarItemListaFiscal(e) {
             const statusClass = `status-${e.status.replace(' ', '')}`;
             const statusLabel = {
                 'pendente': 'Pendente',
@@ -1124,49 +1177,30 @@
                 'aguardando conferencia': 'AGUARDANDO CONF.', 
                 'problema conferencia': 'PROBLEMA NA CONF.', 
                 'fechada': 'FECHADA (OK)', 
-                'entregue': 'Entregue (Antigo)', 
                 'cancelada': 'Cancelada',
                 'falha': 'Falha'
             }[e.status] || e.status;
             
-            let actions = '';
-            if (e.status === 'pendente') {
-                actions = `<button class="btn-small btn-cancelar" onclick="abrirModalCancelamento(${e.id}, 'cancelada')">❌ Cancelar</button>`;
-            }
-            // NOVO: Adicionado display de conferidoPor se a entrega for FECHADA
-            let conferidoDisplay = '';
-            if (e.status === 'fechada' && e.conferidoPor) {
-                 conferidoDisplay = `<div class="entrega-info" style="color: #28a745;"><strong>✅ Conferido Por:</strong> ${e.conferidoPor}</div>`;
-            } else if (e.status === 'aguardando conferencia' || e.status === 'problema conferencia') {
-                 actions += `<button class="btn-small btn-maps" style="background: #ffc107;" onclick="showMessageBox('Atenção', 'Entregas pendentes de conferência devem ser validadas pelo Caixa responsávl: ${e.criadoPor}.')">🔍 Ver Conferência</button>`;
-            }
-            
-            if (e.comprovanteEntregador && e.comprovanteEntregador !== 'Não aplicável') {
-                 actions += `<a class="btn-small btn-maps" style="background: #3d4b7a;" href="${e.comprovanteEntregador}" target="_blank">🖼️ Ver Comprovante</a>`;
-            }
+            // Define se o item deve ter destaque (se for ativo)
+            const isAtiva = e.status !== 'fechada' && e.status !== 'cancelada' && e.status !== 'falha';
+            const itemClass = isAtiva ? 'list-item-fiscal list-item-active' : 'list-item-fiscal';
 
-            const pagoBadge = e.jaPago === 'SIM' ? '<span class="pago-badge">✅ JÁ PAGO</span>' : '<span class="cobrar-badge">💰 COBRAR</span>';
-            const entregadorInfo = e.entregador ? `<div class="entrega-info"><strong>🚴 Entregador:</strong> ${e.entregador}</div>` : '';
             const urgenteBadge = e.urgente === 'Sim' ? '<span class="urgente-badge">⚠️ URGENTE</span>' : '';
-            const taxaInfo = e.taxaEntregaNumerica > 0 ? ` (+ Taxa: ${e.taxaEntrega})` : '';
 
             return `
-                <div class="entrega-card ${e.urgente === 'Sim' ? 'urgent-card' : ''} ${e.status === 'problema conferencia' ? 'problem-card' : ''}">
-                    <div class="entrega-header">
-                        <div class="entrega-nome">${e.displayId} - ${e.clienteNome} ${urgenteBadge}</div>
+                <div class="${itemClass}">
+                    <div class="list-item-header">
+                        <div class="list-item-title">
+                            <span class="list-id">${e.displayId}</span> 
+                            ${e.clienteNome} ${urgenteBadge}
+                        </div>
                         <span class="status-badge ${statusClass}">${statusLabel}</span>
                     </div>
-                    <div class="entrega-info"><strong>📍 Endereço:</strong> ${e.endereco}, ${e.bairro}</div>
-                    <div class="entrega-info"><strong>💰 Valor Pedido:</strong> ${e.valor} ${taxaInfo}</div>
-                    <div class="entrega-info"><strong>💰 VALOR FINAL:</strong> ${e.valorACobrar} ${pagoBadge}</div>
-                    <div class="entrega-info"><strong>🏪 Caixa:</strong> ${e.caixa || 'N/A'}</div>
-                    <div class="entrega-info"><strong>👤 Operador:</strong> ${e.operadorCaixa || 'N/A'}</div>
-                    ${e.observacaoCaixa ? `<div class="entrega-info obs-caixa"><strong>📢 Obs. Caixa:</strong> ${e.observacaoCaixa}</div>` : ''}
-                    ${e.problemaConferencia ? `<div class="entrega-info obs-caixa" style="border-color: #dc3545;"><strong>🚫 Problema Conf.:</strong> ${e.problemaConferencia}</div>` : ''}
-                    ${entregadorInfo}
-                    ${conferidoDisplay}
-                    <div class="entrega-info"><strong>📅 Criado:</strong> ${formatSupabaseDate(e.created_at)}</div>
-                    <div class="entrega-actions">${actions}</div>
+                    <div class="list-item-details">
+                        <span class="list-info">R$ ${e.valorACobrarNumerico.toFixed(2).replace('.', ',')}</span>
+                        <span class="list-info">${e.entregador || 'N/A'}</span>
+                        <button class="btn-small btn-ver" onclick="mostrarDetalhes(${e.id})">🔍 Detalhes</button>
+                    </div>
                 </div>
             `;
         }
@@ -1247,6 +1281,85 @@
                 .attr('class', 'axis-label');
         }
 
+        // --- FUNÇÃO PARA ARQUIVAR (COPIAR + EXCLUIR) ---
+        async function arquivarEntregas() {
+            // Define o limite de arquivamento: entregas fechadas com mais de 7 dias
+            const diasParaManter = 7; 
+            const dataLimite = new Date();
+            dataLimite.setDate(dataLimite.getDate() - diasParaManter);
+            
+            // Filtra as entregas que estão FECHADAS e são mais antigas que o limite
+            const entregasParaArquivar = todasEntregas.filter(e => 
+                e.status === 'fechada' && new Date(e.created_at) < dataLimite
+            );
+
+            if (entregasParaArquivar.length === 0) {
+                 return showMessageBox('Nenhum Arquivamento', `Nenhuma entrega 'Fechada' encontrada com mais de ${diasParaManter} dias para arquivar.`);
+            }
+            
+            const confirmMessage = `Serão COPIADAS ${entregasParaArquivar.length} entregas antigas para a tabela de histórico e DELETADAS da tabela principal. Deseja continuar?`;
+
+            showConfirmBox(
+                '⚠️ Atenção: Arquivamento de Entregas', 
+                confirmMessage,
+                async () => {
+                    if (!window.supabaseClient) {
+                        return showMessageBox('Erro', 'Conexão com o Supabase perdida.');
+                    }
+                    
+                    showMessageBox('⏳ Arquivando...', `Iniciando a cópia e exclusão de ${entregasParaArquivar.length} entregas. Aguarde...`);
+                    
+                    try {
+                        // 1. COPIA PARA A TABELA DE HISTÓRICO
+                        const dadosParaHistorico = entregasParaArquivar.map(e => {
+                            const newEntry = {};
+                            // Copia todas as propriedades renomeando para minúsculas
+                            for (const key in e) {
+                                // Exclui chaves que não são colunas do DB (como displayId)
+                                if (key !== 'displayId') { 
+                                     newEntry[key.toLowerCase()] = e[key];
+                                }
+                            }
+                            // Garante que o ID de origem seja copiado
+                            newEntry.origem_id = e.id; 
+                            return newEntry;
+                        });
+
+                        const { error: insertError } = await window.supabaseClient
+                            .from(SUPABASE_HISTORICO_TABLE)
+                            .insert(dadosParaHistorico);
+                            
+                        if (insertError) {
+                            console.error("Erro ao inserir no histórico:", insertError);
+                            throw new Error(`Falha na CÓPIA para o histórico. Verifique se a tabela "${SUPABASE_HISTORICO_TABLE}" e as regras RLS (INSERT para 'anon') estão corretas.`);
+                        }
+
+                        // 2. DELETA DA TABELA PRINCIPAL
+                        const idsParaDeletar = entregasParaArquivar.map(e => e.id);
+                        
+                        const { error: deleteError } = await window.supabaseClient
+                            .from(SUPABASE_TABLE)
+                            .delete()
+                            .in('id', idsParaDeletar);
+                            
+                        if (deleteError) {
+                            console.error("Erro ao deletar da principal:", deleteError);
+                            throw new Error(`Falha na EXCLUSÃO da tabela principal: ${deleteError.message}`);
+                        }
+                        
+                        // Após deletar, recarrega a lista
+                        await setupSupabaseListener();
+                        
+                        showMessageBox('✅ Sucesso no Arquivamento', `${entregasParaArquivar.length} entregas antigas foram movidas (arquivadas) para o histórico com sucesso!`);
+                        
+                    } catch (error) {
+                         console.error("Erro no Arquivamento:", error);
+                         showMessageBox('❌ Erro Crítico', `${error.message}`);
+                    }
+                }
+            );
+        }
+        
         function mostrarPerformanceEntregadores() {
             mostrarTela('screenPerformance');
             
@@ -1269,7 +1382,7 @@
             if (Object.keys(entregadores).length === 0) {
                 tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Nenhum dado disponível</td></tr>';
             } else {
-                tbody.innerHTML = Object.entries(entregadores).map(([nome, stats]) => {
+                const perfData = Object.entries(entregadores).map(([nome, stats]) => {
                     const sucesso = stats.atribuidas > 0 ? ((stats.entregues / stats.atribuidas) * 100).toFixed(1) : 0;
                     return `
                         <tr>
@@ -1280,6 +1393,7 @@
                         </tr>
                     `;
                 }).join('');
+                tbody.innerHTML = perfData;
             }
         }
 
@@ -1293,11 +1407,13 @@
             
             const select = document.getElementById('entregadorGestaoSelect');
             select.innerHTML = '<option value="">Selecione um entregador...</option>';
-            Object.keys(ENTREGADORES).forEach(nome => {
+            // FIX: Adiciona fallback para objeto vazio caso ENTREGADORES seja null/undefined
+            const entregadoresList = ENTREGADORES || {}; 
+            Object.keys(entregadoresList).forEach(nome => {
                 const opt = document.createElement('option');
                 opt.value = nome;
                 opt.textContent = nome;
-                     select.appendChild(opt);
+                select.appendChild(opt);
             });
             
             atualizarListaEntregadores();
@@ -1403,7 +1519,9 @@
 
         function atualizarListaEntregadores() {
             const lista = document.getElementById('listaEntregadoresAdm');
-            lista.innerHTML = Object.entries(ENTREGADORES).map(([nome, dados]) => `
+            // FIX: Adiciona fallback para objeto vazio caso ENTREGADORES seja null/undefined
+            const entregadoresList = ENTREGADORES || {}; 
+            lista.innerHTML = Object.entries(entregadoresList).map(([nome, dados]) => `
                 <div class="adm-item">
                     <div>
                         <strong>${nome}</strong><br>
@@ -1616,8 +1734,6 @@
 
         // --- FUNÇÕES DE CRIAÇÃO DE CARDS ---
         
-        // Mantida a versão original, mas as demais chamadas foram refeitas para usar a versão mais nova.
-
         function mostrarDetalhes(docId) {
              const entrega = todasEntregas.find(e => e.id == docId);
              if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
@@ -2132,44 +2248,42 @@
         }
         .entrega-card {
             background: var(--card-bg);
-            border: 2px solid var(--border-color);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
             transition: all 0.3s;
         }
         .entrega-card:hover {
             border-color: var(--button-bg);
-            transform: translateX(5px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         .next-delivery-card { 
              border: 3px solid #007bff !important;
              box-shadow: 0 0 15px rgba(0, 123, 255, 0.5);
         }
         .urgent-card {
-             border: 2px solid #dc3545 !important;
-             box-shadow: 0 0 10px rgba(220, 53, 69, 0.3);
+             border-left: 4px solid #dc3545 !important;
         }
         .problem-card {
-            border: 2px solid #dc3545 !important;
-            background-color: #fcebeb;
-            box-shadow: 0 0 10px rgba(220, 53, 69, 0.3);
+            border-left: 4px solid #dc3545 !important;
+            background-color: rgba(220, 53, 69, 0.05);
         }
         .entrega-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
         .entrega-nome {
             font-weight: bold;
-            font-size: 18px;
+            font-size: 16px;
             color: var(--text-primary);
         }
         .status-badge {
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 10px;
             font-weight: bold;
         }
         .status-pendente {
@@ -2198,8 +2312,9 @@
         }
         .entrega-info {
             color: var(--text-secondary);
-            font-size: 14px;
-            margin: 5px 0;
+            font-size: 12px;
+            margin: 3px 0;
+            line-height: 1.3;
         }
         .entrega-info strong {
             color: var(--text-primary);
@@ -2219,13 +2334,13 @@
         }
         .btn-small {
             flex: 1;
-            min-width: 100px;
-            padding: 10px;
+            min-width: 80px;
+            padding: 6px 8px;
             border: none;
-            border-radius: 8px;
+            border-radius: 4px;
             cursor: pointer;
-            font-weight: bold;
-            font-size: 13px;
+            font-weight: normal;
+            font-size: 11px;
             transition: background 0.3s;
         }
         .btn-small:hover {
@@ -2317,36 +2432,36 @@
             display: inline-block;
             background: #17a2b8;
             color: white;
-            padding: 4px 10px;
-            border-radius: 5px;
-            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
             margin-left: 5px;
         }
         .urgente-badge {
             display: inline-block;
             background: #dc3545;
             color: white;
-            padding: 4px 10px;
-            border-radius: 5px;
-            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
             margin-left: 5px;
         }
         .pago-badge {
             display: inline-block;
             background: #28a745;
             color: white;
-            padding: 4px 10px;
-            border-radius: 5px;
-            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
             margin-left: 5px;
         }
         .cobrar-badge {
             display: inline-block;
             background: #ffc107;
             color: #000;
-            padding: 4px 10px;
-            border-radius: 5px;
-            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
             font-weight: bold;
             margin-left: 5px;
         }
@@ -2354,9 +2469,9 @@
             display: inline-block;
             background: #007bff;
             color: white;
-            padding: 4px 10px;
-            border-radius: 5px;
-            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
             margin-left: 5px;
         }
         .detalhes-modal {
@@ -2636,6 +2751,85 @@
             background: #28a745;
             color: white;
         }
+        /* NOVO ESTILO: Lista Simples do Fiscal/Histórico */
+        .list-item-fiscal {
+            display: flex;
+            flex-direction: column;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+        }
+        /* Destaque para itens ativos (pendentes, em rota, conferência) */
+        .list-item-fiscal.list-item-active {
+             border-left: 4px solid #d63031;
+             background-color: rgba(214, 48, 49, 0.05); /* Leve fundo vermelho/laranja */
+        }
+
+        .list-item-fiscal:hover {
+            border-color: var(--button-bg);
+        }
+        .list-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .list-item-title {
+            font-weight: bold;
+            font-size: 15px;
+            color: var(--text-primary);
+            flex-grow: 1;
+        }
+        .list-id {
+            color: #d63031;
+            margin-right: 5px;
+        }
+        .list-item-details {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+        }
+        .list-info {
+            color: var(--text-secondary);
+        }
+        .list-item-details .btn-small {
+            margin-left: auto; /* Alinha o botão à direita */
+            min-width: 90px;
+        }
+        
+        /* Estilos para Agrupamento por Data */
+        .data-group-container {
+             margin-bottom: 20px;
+             border: 1px solid var(--border-color);
+             border-radius: 10px;
+             padding: 15px;
+             background-color: var(--bg-secondary);
+             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        .data-group-header {
+             display: flex;
+             justify-content: space-between;
+             align-items: center;
+             padding-bottom: 10px;
+             margin-bottom: 10px;
+             border-bottom: 2px solid var(--border-color);
+        }
+        .data-group-header h4 {
+             margin: 0;
+             color: var(--button-bg);
+             font-size: 18px;
+        }
+        .group-summary {
+             font-size: 12px;
+             font-weight: bold;
+             color: #28a745;
+             text-align: right;
+        }
+        /* Fim dos Estilos de Agrupamento */
     </style>
 </head>
 <body>
@@ -2875,7 +3069,7 @@
                         <p style="color: #666;" id="dataFiscal"></p>
                     </div>
                     
-                    <h4 style="color: #d63031;">Filtro de Período</h4>
+                    <h4 style="color: #d63031;">Filtro de Período (Padrão: Últimos 30 Dias)</h4>
                     <div class="form-row">
                         <div class="form-group">
                             <label>Data Inicial:</label>
@@ -2923,8 +3117,14 @@
                     <button class="btn-primary" onclick="mostrarPerformanceEntregadores()">🚴 Performance por Entregador</button>
                     <button class="btn-primary" onclick="mostrarTela('screenCriarEntrega')">📦 Criar Nova Entrega</button>
                     <button class="btn-voltar" style="background: #3d4b7a;" onclick="carregarGestaoAdm()">⚙️ Gestão de Usuários</button>
+                    
+                    <hr style="margin: 20px 0;">
+                    <!-- Botão de Arquivamento (agora com cópia + exclusão) -->
+                    <button class="btn-voltar btn-remover-user" onclick="arquivarEntregas()" style="margin-bottom: 15px; background: #007bff; color: white;">📁 ARQUIVAR ENTREGAS (MOVER P/ HISTÓRICO)</button>
+                    <hr style="margin: 20px 0;">
 
-                    <h3>Todas as Entregas no Período</h3>
+                    <h3>Histórico de Entregas (Detalhado)</h3>
+                    <!-- A lista agora será populada pela nova função renderizarEntregasAgrupadas -->
                     <div id="listaTodasEntregas"></div>
 
                     <button class="btn-voltar" onclick="logout()">← Sair</button>
