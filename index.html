@@ -1741,9 +1741,196 @@
                  setupSupabaseListener(); // FORÇA ATUALIZAÇÃO IMEDIATA
              }
         }
+
+        // --- FUNÇÃO DE MODO DARK ---
+        function toggleDarkMode() {
+            const body = document.body;
+            const darkModeToggle = document.getElementById('darkModeToggle');
+            
+            if (body.getAttribute('data-theme') === 'dark') {
+                body.removeAttribute('data-theme');
+                darkModeToggle.textContent = '🌙';
+                localStorage.setItem('darkMode', 'false');
+            } else {
+                body.setAttribute('data-theme', 'dark');
+                darkModeToggle.textContent = '☀️';
+                localStorage.setItem('darkMode', 'true');
+            }
+        }
+
+        // Carregar preferência do modo dark ao inicializar
+        function loadDarkModePreference() {
+            const darkMode = localStorage.getItem('darkMode');
+            const darkModeToggle = document.getElementById('darkModeToggle');
+            
+            if (darkMode === 'true') {
+                document.body.setAttribute('data-theme', 'dark');
+                darkModeToggle.textContent = '☀️';
+            } else {
+                darkModeToggle.textContent = '🌙';
+            }
+        }
+
+        // Chamar a função quando a página carregar
+        document.addEventListener('DOMContentLoaded', loadDarkModePreference);
         
     </script>
     <style>
+        :root {
+            --bg-primary: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
+            --bg-secondary: white;
+            --text-primary: #333;
+            --text-secondary: #666;
+            --text-inverse: white;
+            --card-bg: white;
+            --border-color: #ddd;
+            --shadow: 0 10px 40px rgba(0,0,0,0.2);
+            --input-bg: white;
+            --input-border: #ddd;
+            --button-bg: #3d4b7a;
+            --button-hover: #2c3a5a;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            --bg-secondary: #2d3748;
+            --text-primary: #ffffff;
+            --text-secondary: #e2e8f0;
+            --text-inverse: #1a202c;
+            --card-bg: #2d3748;
+            --border-color: #4a5568;
+            --shadow: 0 10px 40px rgba(0,0,0,0.4);
+            --input-bg: #1a202c;
+            --input-border: #4a5568;
+            --button-bg: #4a5568;
+            --button-hover: #2d3748;
+        }
+
+        /* Estilos específicos para modo dark - garantir textos brancos */
+        [data-theme="dark"] * {
+            color: inherit;
+        }
+
+        [data-theme="dark"] input,
+        [data-theme="dark"] select,
+        [data-theme="dark"] textarea {
+            color: #ffffff !important;
+        }
+
+        /* Estilo específico para campos de valores monetários */
+        [data-theme="dark"] input[readonly],
+        [data-theme="dark"] input[disabled] {
+            color: #9ca3af !important;
+            background-color: #374151 !important;
+        }
+
+        /* Campos de taxa e valor a cobrar */
+        [data-theme="dark"] #taxaEntregaDisplay,
+        [data-theme="dark"] #valorCobrarDisplay,
+        [data-theme="dark"] #trocoADevolver {
+            color: #9ca3af !important;
+            background-color: #374151 !important;
+        }
+
+        [data-theme="dark"] input::placeholder,
+        [data-theme="dark"] textarea::placeholder {
+            color: #a0aec0 !important;
+        }
+
+        [data-theme="dark"] h1,
+        [data-theme="dark"] h2,
+        [data-theme="dark"] h3,
+        [data-theme="dark"] h4,
+        [data-theme="dark"] h5,
+        [data-theme="dark"] h6 {
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] p,
+        [data-theme="dark"] span,
+        [data-theme="dark"] div {
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .entrega-info,
+        [data-theme="dark"] .conferencia-detail {
+            color: #e2e8f0 !important;
+        }
+
+        [data-theme="dark"] .entrega-info strong,
+        [data-theme="dark"] .conferencia-detail strong {
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .entrega-nome {
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .stat-number {
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .stat-label {
+            color: #e2e8f0 !important;
+        }
+
+        [data-theme="dark"] .gestao-card h3 {
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .gestao-card p {
+            color: #e2e8f0 !important;
+        }
+
+        [data-theme="dark"] .empty-state {
+            color: #e2e8f0 !important;
+        }
+
+        [data-theme="dark"] .adm-item {
+            color: #ffffff !important;
+        }
+
+        /* Garantir que todos os botões tenham texto branco no modo dark */
+        [data-theme="dark"] button,
+        [data-theme="dark"] .btn-primary,
+        [data-theme="dark"] .btn-voltar,
+        [data-theme="dark"] .btn-small,
+        [data-theme="dark"] .btn-pegar,
+        [data-theme="dark"] .btn-entregar,
+        [data-theme="dark"] .btn-falha,
+        [data-theme="dark"] .btn-ver,
+        [data-theme="dark"] .btn-cancelar,
+        [data-theme="dark"] .btn-maps,
+        [data-theme="dark"] .btn-verde,
+        [data-theme="dark"] .btn-add-points,
+        [data-theme="dark"] .btn-remove-points,
+        [data-theme="dark"] .btn-reset-senha,
+        [data-theme="dark"] .btn-remover-user,
+        [data-theme="dark"] .modal-btn,
+        [data-theme="dark"] .role-btn {
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .btn-primary {
+            background: var(--bg-primary) !important;
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .btn-voltar {
+            background: var(--button-bg) !important;
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .modal-btn.primary {
+            background: var(--button-bg) !important;
+            color: #ffffff !important;
+        }
+
+        [data-theme="dark"] .modal-btn.secondary {
+            background: var(--border-color) !important;
+            color: #ffffff !important;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -1751,28 +1938,32 @@
         }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
+            background: var(--bg-primary);
             min-height: 100vh;
             padding: 10px;
             display: flex;
             flex-direction: column;
+            color: var(--text-primary);
+            transition: all 0.3s ease;
         }
         .container {
             max-width: 600px;
             margin: 0 auto;
-            background: white;
+            background: var(--card-bg);
             border-radius: 20px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            box-shadow: var(--shadow);
             overflow: hidden;
             flex-grow: 1;
             margin-bottom: 20px;
             width: 100%;
+            transition: all 0.3s ease;
         }
         .header {
-            background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
-            color: white;
+            background: var(--bg-primary);
+            color: var(--text-inverse);
             padding: 30px 20px;
             text-align: center;
+            position: relative;
         }
         .header h1 {
             font-size: 24px;
@@ -1795,6 +1986,23 @@
             font-size: 12px;
             font-weight: bold;
         }
+        .dark-mode-toggle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        .dark-mode-toggle:hover {
+            background: rgba(255,255,255,0.3);
+        }
         .content {
             padding: 20px;
         }
@@ -1805,16 +2013,16 @@
             display: block;
         }
         h2 {
-            color: #3d4b7a;
+            color: var(--text-primary);
             margin-bottom: 20px;
             text-align: center;
         }
         h3 {
-            color: #3d4b7a;
+            color: var(--text-primary);
             margin: 20px 0 10px;
         }
         h4 {
-            color: #3d4b7a;
+            color: var(--text-primary);
             margin-top: 15px;
             margin-bottom: 10px;
             font-size: 16px;
@@ -1824,7 +2032,7 @@
         }
         .form-group label {
             display: block;
-            color: #3d4b7a;
+            color: var(--text-primary);
             font-weight: bold;
             margin-bottom: 8px;
             font-size: 14px;
@@ -1832,13 +2040,30 @@
         .form-group input, .form-group select, .form-group textarea {
             width: 100%;
             padding: 12px;
-            border: 2px solid #e0e0e0;
+            border: 2px solid var(--input-border);
             border-radius: 10px;
             font-size: 14px;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
         }
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
             outline: none;
-            border-color: #3d4b7a;
+            border-color: var(--button-bg);
+        }
+
+        /* Estilos para campos de valores monetários (modo claro) */
+        input[readonly],
+        input[disabled] {
+            background-color: #f3f4f6 !important;
+            color: #6b7280 !important;
+        }
+
+        #taxaEntregaDisplay,
+        #valorCobrarDisplay,
+        #trocoADevolver {
+            background-color: #f3f4f6 !important;
+            color: #6b7280 !important;
         }
         .form-group textarea {
             min-height: 60px;
@@ -1856,8 +2081,8 @@
         }
         .btn-primary {
             width: 100%;
-            background: linear-gradient(135deg, #3d4b7a 0%, #d63031 100%);
-            color: white;
+            background: var(--bg-primary);
+            color: var(--text-inverse);
             border: none;
             padding: 15px;
             font-size: 16px;
@@ -1872,8 +2097,8 @@
             box-shadow: 0 5px 15px rgba(61, 75, 122, 0.4);
         }
         .btn-voltar {
-            background: #6c757d;
-            color: white;
+            background: var(--button-bg);
+            color: var(--text-inverse);
             border: none;
             padding: 12px;
             border-radius: 10px;
@@ -1881,14 +2106,15 @@
             font-weight: bold;
             width: 100%;
             margin-top: 10px;
+            transition: all 0.3s ease;
         }
         .btn-voltar:hover {
-            background: #5a6268;
+            background: var(--button-hover);
         }
         .role-btn {
-            background: white;
-            border: 3px solid #3d4b7a;
-            color: #3d4b7a;
+            background: var(--card-bg);
+            border: 3px solid var(--button-bg);
+            color: var(--text-primary);
             padding: 25px;
             font-size: 18px;
             font-weight: bold;
@@ -1896,23 +2122,24 @@
             cursor: pointer;
             display: block;
             width: 100%;
+            transition: all 0.3s ease;
             margin-bottom: 15px;
             transition: all 0.3s;
         }
         .role-btn:hover {
-            background: #3d4b7a;
-            color: white;
+            background: var(--button-bg);
+            color: var(--text-inverse);
         }
         .entrega-card {
-            background: white;
-            border: 2px solid #e0e0e0;
+            background: var(--card-bg);
+            border: 2px solid var(--border-color);
             border-radius: 12px;
             padding: 15px;
             margin-bottom: 15px;
             transition: all 0.3s;
         }
         .entrega-card:hover {
-            border-color: #3d4b7a;
+            border-color: var(--button-bg);
             transform: translateX(5px);
         }
         .next-delivery-card { 
@@ -1937,7 +2164,7 @@
         .entrega-nome {
             font-weight: bold;
             font-size: 18px;
-            color: #3d4b7a;
+            color: var(--text-primary);
         }
         .status-badge {
             padding: 5px 12px;
@@ -1970,15 +2197,15 @@
             color: white;
         }
         .entrega-info {
-            color: #666;
+            color: var(--text-secondary);
             font-size: 14px;
             margin: 5px 0;
         }
         .entrega-info strong {
-            color: #333;
+            color: var(--text-primary);
         }
         .obs-caixa {
-             border-left: 3px solid #3d4b7a;
+             border-left: 3px solid var(--button-bg);
              padding-left: 8px;
              margin-top: 10px;
              font-style: italic;
@@ -2038,16 +2265,17 @@
             grid-template-columns: 1fr;
         }
         .stat-card {
-            background: white;
-            border: 2px solid #e0e0e0;
+            background: var(--card-bg);
+            border: 2px solid var(--border-color);
             border-radius: 10px;
             padding: 15px;
             text-align: center;
+            transition: all 0.3s ease;
         }
         .stat-number {
             font-size: 28px;
             font-weight: bold;
-            color: #3d4b7a;
+            color: var(--text-primary);
         }
         .stat-number.green {
              color: #28a745;
@@ -2056,20 +2284,21 @@
              color: #ffc107;
         }
         .stat-label {
-            color: #666;
+            color: var(--text-secondary);
             font-size: 12px;
             margin-top: 5px;
         }
         .chart-container {
-             background: #f8f9fa;
-             border: 1px solid #ddd;
+             background: var(--card-bg);
+             border: 1px solid var(--border-color);
              border-radius: 10px;
              padding: 15px;
              margin-bottom: 20px;
-             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+             box-shadow: var(--shadow);
+             transition: all 0.3s ease;
         }
         .chart-container h3 {
-             color: #3d4b7a;
+             color: var(--text-primary);
              font-size: 18px;
              margin-bottom: 10px;
         }
@@ -2147,7 +2376,7 @@
             display: flex;
         }
         .detalhes-content {
-            background: white;
+            background: var(--card-bg);
             border-radius: 20px;
             padding: 30px;
             max-width: 500px;
@@ -2155,6 +2384,7 @@
             max-height: 90vh;
             overflow-y: auto;
             position: relative;
+            transition: all 0.3s ease;
         }
         .btn-fechar {
             position: absolute;
@@ -2172,35 +2402,38 @@
         .empty-state {
             text-align: center;
             padding: 40px 20px;
-            color: #666;
+            color: var(--text-secondary);
         }
         .adm-item {
-            background: #f8f9fa;
-            border: 1px solid #ddd;
-            border-left: 5px solid #3d4b7a;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-left: 5px solid var(--button-bg);
             padding: 10px;
             margin-bottom: 8px;
             border-radius: 5px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            transition: all 0.3s ease;
         }
         .gestao-card {
-            background: #f8f9fa;
-            border: 1px solid #e0e0e0;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
             border-radius: 15px;
             padding: 20px;
             margin-bottom: 20px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+            box-shadow: var(--shadow);
+            transition: all 0.3s ease;
         }
         .gestao-card h3 {
-            color: #d63031;
+            color: var(--text-primary);
             font-size: 24px;
             margin-bottom: 10px;
         }
         .gestao-card p {
             margin: 5px 0;
             font-size: 14px;
+            color: var(--text-secondary);
         }
         .gestao-actions-grid {
             display: grid;
@@ -2235,9 +2468,10 @@
             color: white;
         }
         #loginAtendimento {
-            background: #f0f4f7;
+            background: var(--card-bg);
             padding: 15px;
             border-radius: 10px;
+            border: 1px solid var(--border-color);
         }
         #loginAtendimento button {
             margin-top: 20px;
@@ -2247,16 +2481,16 @@
             z-index: 1001;
         }
         #modalAnexo .detalhes-content {
-            background: #f8f9fa;
+            background: var(--card-bg);
             text-align: center;
         }
         #modalAnexo input[type="file"] {
-            border: 2px dashed #3d4b7a;
+            border: 2px dashed var(--button-bg);
             padding: 20px 12px;
             cursor: pointer;
         }
         #modalAnexo textarea {
-            border: 1px solid #ddd;
+            border: 1px solid var(--border-color);
             margin-top: 10px;
         }
         #modalAnexo button {
@@ -2278,13 +2512,14 @@
             display: flex;
         }
         .custom-modal-content {
-            background: white;
+            background: var(--card-bg);
             border-radius: 15px;
             padding: 25px;
             max-width: 350px;
             width: 90%;
             text-align: center;
             box-shadow: 0 5px 30px rgba(0,0,0,0.4);
+            transition: all 0.3s ease;
         }
         .custom-modal-content.wide {
             max-width: 500px;
@@ -2292,13 +2527,14 @@
             text-align: left;
         }
         .custom-modal-content h4 {
-            color: #3d4b7a;
+            color: var(--text-primary);
             margin-bottom: 15px;
             text-align: center;
         }
         .custom-modal-content p {
             margin-bottom: 20px;
             font-size: 14px;
+            color: var(--text-secondary);
         }
         .modal-buttons {
             display: flex;
@@ -2315,12 +2551,12 @@
             flex: 1;
         }
         .modal-btn.primary {
-            background: #3d4b7a;
-            color: white;
+            background: var(--button-bg);
+            color: var(--text-inverse);
         }
         .modal-btn.secondary {
-            background: #e0e0e0;
-            color: #333;
+            background: var(--border-color);
+            color: var(--text-primary);
         }
         .modal-btn.danger {
             background: #dc3545;
@@ -2335,15 +2571,15 @@
         .performance-table th, .performance-table td {
             padding: 12px 8px;
             text-align: left;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-color);
         }
         .performance-table th {
-            background-color: #f0f4f7;
-            color: #3d4b7a;
+            background-color: var(--card-bg);
+            color: var(--text-primary);
             font-weight: bold;
         }
         .performance-table tr:hover {
-            background-color: #fafafa;
+            background-color: var(--card-bg);
         }
         .performance-metric {
             font-weight: bold;
@@ -2352,17 +2588,18 @@
         .footer {
             text-align: center;
             padding: 15px;
-            color: rgba(255,255,255,0.8);
+            color: var(--text-inverse);
             font-size: 12px;
+            opacity: 0.8;
             margin-top: auto;
         }
         .conferencia-detail {
             font-size: 14px;
             margin-bottom: 5px;
-            color: #333;
+            color: var(--text-primary);
         }
         .conferencia-detail strong {
-             color: #3d4b7a;
+             color: var(--text-primary);
         }
         .valor-dinheiro strong {
              color: #28a745 !important;
@@ -2404,15 +2641,16 @@
 <body>
     <div class="container">
         <div class="header">
+            <button class="dark-mode-toggle" id="darkModeToggle" onclick="toggleDarkMode()">🌙</button>
             <button class="logout-btn" id="logoutBtn" onclick="logout()" style="display:none;">🚪 Sair</button>
             <h1>🚚 Entregas Rio Branco</h1>
-            <p>Sistema de Gestão de Entregas (Versão Supabase)</p>
+            <p>Sistema de Gestão de Entregas</p>
         </div>
 
         <div class="content">
             <div id="loader" style="text-align: center; padding: 50px;">
-                <h3 style="color: #3d4b7a;">⏳ Carregando dados...</h3>
-                <p>Aguarde a conexão com o banco.</p>
+                <h3 style="color: var(--text-primary);">⏳ Carregando dados...</h3>
+                <p style="color: var(--text-secondary);">Aguarde a conexão com o banco.</p>
             </div>
             
             <div id="appContainer" style="display:none;">
