@@ -2643,6 +2643,23 @@
              text-align: right;
         }
         /* Fim dos Estilos de Agrupamento */
+        
+        /* Estilos atualizados para o footer */
+        .footer-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 15px;
+            color: var(--text-inverse);
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: auto;
+        }
+        .footer-content p {
+            margin: 2px 0;
+            color: inherit !important; /* Garante que o texto seja branco no modo dark */
+        }
     </style>
 </head>
 <body>
@@ -2946,7 +2963,9 @@
                     <hr style="margin: 20px 0;">
                     <!-- Botão de Arquivamento (agora com cópia + exclusão) -->
                     <button class="btn-voltar btn-remover-user" onclick="arquivarEntregas()" style="margin-bottom: 15px; background: #007bff; color: white;">📁 ARQUIVAR ENTREGAS </button>
-                    <button class="btn-voltar btn-remover-user" onclick="excluirTodasEntregas()" style="margin-bottom: 15px; background: #dc3545; color: white;">🚨 DELETAR TUDO (SENHA)</button>
+                    
+                    <!-- BOTÃO DELETAR TUDO REMOVIDO AQUI, conforme solicitado -->
+                    
                     <hr style="margin: 20px 0;">
 
                     <h3>Histórico de Entregas (Detalhado)</h3>
@@ -3117,7 +3136,10 @@
     </div>
     
     <div class="footer">
-        © 2025 AutoVizion. Todos os direitos reservados. Soluções inteligentes em automação e marketing digital.
+        <div class="footer-content">
+            <p>© 2025 AutoVizion. Todos os direitos reservados. Soluções inteligentes em automação e marketing digital.</p>
+            <p>Seu atendimento no automático, seu negócio no topo.</p>
+        </div>
     </div>
 </body>
 </html>
