@@ -18,6 +18,7 @@
         const SUPABASE_TABLE = 'entregas'; 
         const SUPABASE_HISTORICO_TABLE = 'entregas_historico'; // NOVA CONSTANTE PARA A TABELA DE HISTÓRICO
         const SUPABASE_STORAGE_BUCKET = 'entregas-comprovantes'; 
+        const SENHA_DELECAO_TOTAL = 'RB@2025'; // Senha de segurança para deleção total (função ainda protegida)
         
         // --- VARIÁVEIS DE CONEXÃO ---
         window.supabaseClient = null;
@@ -285,7 +286,7 @@
                 // Filtra apenas as entregas criadas hoje para o painel do entregador
                 entregasFiltradas = entregasFiltradas.filter(e => new Date(e.created_at).toLocaleDateString('pt-BR') === hoje); 
 
-                // ORDENAÇÃO PARA ENTREGADOR: Prioridade URGÊNCIA, depois Data de Criação (mais recente primeiro)
+                // ORDENAÇÃO PARA ENTREGADOR: Prioridade URGÊNCIA, depois Data de Criação (mais recente primeiro)
                 return entregasFiltradas.sort((a, b) => {
                     // 1. PRIORIDADE MÁXIMA PARA URGENTE
                     if (a.urgente === 'Sim' && b.urgente === 'Não') return -1;
@@ -294,39 +295,14 @@
                     // 2. DESEMPATE (Mais recente primeiro) - Para todas as listas
                     return new Date(b.created_at) - new Date(a.created_at);
                 }); 
-
             } else {
                  // ORDENAÇÃO PARA FISCAL/ATENDIMENTO (Histórico/Geral): Apenas por Data de Criação (mais recente primeiro)
                  // Ignora a urgência na ordenação da lista, como solicitado (Histórico segue ordem numérica/cronológica)
                  return entregasFiltradas.sort((a, b) => {
-                     // Mais recente primeiro (decrescente) para manter o displayId sequencial visualmente
-                     return new Date(b.created_at) - new Date(a.created_at);
-                 });
+                      // Mais recente primeiro (decrescente) para manter o displayId sequencial visualmente
+                      return new Date(b.created_at) - new Date(a.created_at);
+                  });
             }
-        }
-
-        function copiarEndereco(endereco, bairro) {
-            const enderecoCompleto = `${endereco}, ${bairro}, Garça, SP, Brasil`; 
-            
-            const tempInput = document.createElement('textarea');
-            tempInput.value = enderecoCompleto;
-            document.body.appendChild(tempInput);
-            tempInput.select();
-            
-            try {
-                const success = document.execCommand('copy');
-                if (success) {
-                    showMessageBox('📋 Endereço Copiado!', 'O endereço foi copiado para a área de transferência. Cole em seu app de Maps.');
-                } else {
-                    throw new Error('Cópia manual necessária.');
-                }
-            } catch (err) {
-                 showMessageBox('📋 Falha ao Copiar Automaticamente', 
-                    `Não foi possível copiar o endereço automaticamente. Por favor, selecione e copie manualmente o texto abaixo:\n\n${enderecoCompleto}`
-                 );
-                 console.error('Falha ao usar execCommand: ', err);
-            }
-            document.body.removeChild(tempInput);
         }
 
         // --- FUNÇÃO DE INICIALIZAÇÃO SUPABASE (REATIVADA) ---
@@ -691,30 +667,121 @@
             }
         }
 
-        function copiarEndereco(endereco, bairro) {
-            const enderecoCompleto = `${endereco}, ${bairro}, Garça, SP, Brasil`; 
+        // --- FUNÇÃO PARA ARQUIVAR (COPIAR + EXCLUIR) ---
+        async function arquivarEntregas() {
+            // Define o limite de arquivamento: entregas fechadas com mais de 7 dias
+            const diasParaManter = 7; 
+            const dataLimite = new Date();
+            dataLimite.setDate(dataLimite.getDate() - diasParaManter);
             
-            const tempInput = document.createElement('textarea');
-            tempInput.value = enderecoCompleto;
-            document.body.appendChild(tempInput);
-            tempInput.select();
-            
-            try {
-                const success = document.execCommand('copy');
-                if (success) {
-                    showMessageBox('📋 Endereço Copiado!', 'O endereço foi copiado para a área de transferência. Cole em seu app de Maps.');
-                } else {
-                    throw new Error('Cópia manual necessária.');
-                }
-            } catch (err) {
-                 showMessageBox('📋 Falha ao Copiar Automaticamente', 
-                    `Não foi possível copiar o endereço automaticamente. Por favor, selecione e copie manualmente o texto abaixo:\n\n${enderecoCompleto}`
-                 );
-                 console.error('Falha ao usar execCommand: ', err);
-            }
-            document.body.removeChild(tempInput);
-        }
+            // Filtra as entregas que estão FECHADAS e são mais antigas que o limite
+            const entregasParaArquivar = todasEntregas.filter(e => 
+                e.status === 'fechada' && new Date(e.created_at) < dataLimite
+            );
 
+            if (entregasParaArquivar.length === 0) {
+                 return showMessageBox('Nenhum Arquivamento', `Nenhuma entrega 'Fechada' encontrada com mais de ${diasParaManter} dias para arquivar.`);
+            }
+            
+            const confirmMessage = `Serão COPIADAS ${entregasParaArquivar.length} entregas antigas para a tabela de histórico e DELETADAS da tabela principal. Deseja continuar?`;
+
+            showConfirmBox(
+                '⚠️ Atenção: Arquivamento de Entregas', 
+                confirmMessage,
+                async () => {
+                    if (!window.supabaseClient) {
+                        return showMessageBox('Erro', 'Conexão com o Supabase perdida.');
+                    }
+                    
+                    showMessageBox('⏳ Arquivando...', `Iniciando a cópia e exclusão de ${entregasParaArquivar.length} entregas. Aguarde...`);
+                    
+                    try {
+                        // 1. COPIA PARA A TABELA DE HISTÓRICO
+                        const dadosParaHistorico = entregasParaArquivar.map(e => {
+                            const newEntry = {};
+                            // Copia todas as propriedades renomeando para minúsculas
+                            for (const key in e) {
+                                // Exclui chaves que não são colunas do DB (como displayId)
+                                if (key !== 'displayId') { 
+                                     newEntry[key.toLowerCase()] = e[key];
+                                }
+                            }
+                            // Garante que o ID de origem seja copiado
+                            newEntry.origem_id = e.id; 
+                            return newEntry;
+                        });
+
+                        const { error: insertError } = await window.supabaseClient
+                            .from(SUPABASE_HISTORICO_TABLE)
+                            .insert(dadosParaHistorico);
+                            
+                        if (insertError) {
+                            console.error("Erro ao inserir no histórico:", insertError);
+                            throw new Error(`Falha na CÓPIA para o histórico. Verifique se a tabela "${SUPABASE_HISTORICO_TABLE}" e as regras RLS (INSERT para 'anon') estão corretas.`);
+                        }
+
+                        // 2. DELETA DA TABELA PRINCIPAL
+                        const idsParaDeletar = entregasParaArquivar.map(e => e.id);
+                        
+                        const { error: deleteError } = await window.supabaseClient
+                            .from(SUPABASE_TABLE)
+                            .delete()
+                            .in('id', idsParaDeletar);
+                            
+                        if (deleteError) {
+                            console.error("Erro ao deletar da principal:", deleteError);
+                            throw new Error(`Falha na EXCLUSÃO da tabela principal: ${deleteError.message}`);
+                        }
+                        
+                        // Após deletar, recarrega a lista
+                        await setupSupabaseListener();
+                        
+                        showMessageBox('✅ Sucesso no Arquivamento', `${entregasParaArquivar.length} entregas antigas foram movidas (arquivadas) para o histórico com sucesso!`);
+                        
+                    } catch (error) {
+                         console.error("Erro no Arquivamento:", error);
+                         showMessageBox('❌ Erro Crítico', `${error.message}`);
+                    }
+                }
+            );
+        }
+        
+        // --- FUNÇÃO PARA DELETAR TUDO (PROTEGIDA POR SENHA) ---
+        async function excluirTodasEntregas() {
+             const senha = prompt("ATENÇÃO: Esta ação DELETA TODOS os dados da tabela principal. Digite a senha de segurança para confirmar:");
+             
+             if (senha !== SENHA_DELECAO_TOTAL) {
+                 return showMessageBox('❌ Acesso Negado', 'Senha incorreta. A exclusão total foi cancelada.');
+             }
+
+             showConfirmBox(
+                 '⚠️ DELEÇÃO PERMANENTE',
+                 'VOCÊ TEM CERTEZA? Isso deletará TODAS as entregas da tabela principal (não arquivadas) permanentemente.',
+                 async () => {
+                     if (!window.supabaseClient) return showMessageBox('Erro', 'Conexão com o Supabase perdida.');
+
+                     showMessageBox('⏳ Deletando...', 'Excluindo todos os registros da tabela principal. Aguarde...');
+
+                     try {
+                         const { error } = await window.supabaseClient
+                             .from(SUPABASE_TABLE)
+                             .delete()
+                             .neq('id', 0); // Condição que sempre será verdadeira para deletar tudo
+
+                         if (error) throw error;
+                         
+                         // Recarrega a lista (que estará vazia)
+                         await setupSupabaseListener();
+                         showMessageBox('✅ Sucesso', 'Todas as entregas foram deletadas da tabela principal!');
+
+                     } catch (error) {
+                         console.error("Erro ao deletar tudo:", error);
+                         showMessageBox('❌ Erro', `Falha ao deletar os dados: ${error.message}`);
+                     }
+                 }
+             );
+        }
+        
         // --- FUNÇÕES DE RENDERIZAÇÃO E TELAS ---
         function atualizarTelas() {
             if (tipoUsuario === 'entregador') {
@@ -765,7 +832,7 @@
                 const select = document.getElementById('atendenteNome');
                 select.innerHTML = '<option value="">Selecione seu nome...</option>';
                 
-                // FIX: Adiciona fallback para objeto vazio caso ATENDENTES seja null/undefined
+                // FIX: Adiciona fallback robusto
                 const atendentes = ATENDENTES || {};
                 Object.keys(atendentes).forEach(nome => {
                     const opt = document.createElement('option');
@@ -781,8 +848,8 @@
                 select.innerHTML = '<option value="">Selecione...</option>';
                 
                 const usuarios = tipo === 'entregador' ? ENTREGADORES : GESTORES;
-                // FIX: Adiciona fallback para objeto vazio caso ENTREGADORES/GESTORES seja null/undefined
-                const userList = usuarios || {}; 
+                // FIX: Adiciona fallback robusto
+                const userList = usuarios || {};
                 Object.keys(userList).forEach(nome => {
                     const opt = document.createElement('option');
                     opt.value = nome;
@@ -990,9 +1057,12 @@
             // NOVO: Exibir Observação do Caixa para entregadores
             const obsCaixaDisplay = e.observacaoCaixa ? `<div class="entrega-info obs-caixa"><strong>📢 Obs. Caixa:</strong> ${e.observacaoCaixa}</div>` : '';
 
+            // NOVO: Aplica a classe de animação se for a próxima entrega E for urgente
+            const urgentAnimationClass = (isNext && e.urgente === 'Sim' && tipo === 'emrota') ? 'pulse-urgent' : '';
+
 
             return `
-                <div class="entrega-card ${e.urgente === 'Sim' ? 'urgent-card' : ''} ${e.status === 'problema conferencia' ? 'problem-card' : ''} ${isNext ? 'next-delivery-card' : ''}">
+                <div class="entrega-card ${e.urgente === 'Sim' ? 'urgent-card' : ''} ${e.status === 'problema conferencia' ? 'problem-card' : ''} ${isNext ? 'next-delivery-card' : ''} ${urgentAnimationClass}">
                     <div class="entrega-header">
                         <div class="entrega-nome">${e.displayId} - ${e.clienteNome} ${urgenteBadge}</div>
                         <span class="status-badge ${statusClass}">${statusLabel}</span>
@@ -1121,7 +1191,15 @@
             
             const totalArrecadado = entregas.filter(e => e.status === 'fechada').reduce((sum, e) => sum + (e.valorACobrarNumerico || 0), 0);
             document.getElementById('totalArrecadado').textContent = formatarMoeda(totalArrecadado);
-            
+
+            // NOVO: Cálculo das taxas
+            const totalTaxasCobradas = entregas.filter(e => e.status === 'fechada' && e.taxaEntregaNumerica > 0).reduce((sum, e) => sum + e.taxaEntregaNumerica, 0);
+            const totalTaxasIsentas = entregas.filter(e => e.status === 'fechada' && e.isentarTaxa === 'Sim').length;
+
+            document.getElementById('totalTaxasCobradas').textContent = formatarMoeda(totalTaxasCobradas);
+            document.getElementById('totalTaxasIsentas').textContent = `${totalTaxasIsentas} Entregas`;
+
+
             renderizarGrafico(entregas);
             
             // NOVO: Renderiza a lista com agrupamento por data
@@ -1130,36 +1208,36 @@
         
         // NOVO: Função para agrupar e renderizar no Fiscal
         function renderizarEntregasAgrupadas(entregas) {
-             const listaCompleta = document.getElementById('listaTodasEntregas');
-             listaCompleta.innerHTML = '';
-             
-             if (entregas.length === 0) {
-                 listaCompleta.innerHTML = '<div class="empty-state"><p>Nenhuma entrega no período selecionado.</p></div>';
-                 return;
-             }
-             
-             // Agrupa as entregas por data de criação (formato DD/MM/YYYY)
-             const gruposPorData = entregas.reduce((acc, entrega) => {
-                 const dataKey = formatarDataParaCabecalho(entrega.created_at);
-                 if (!acc[dataKey]) {
-                     acc[dataKey] = [];
-                 }
-                 acc[dataKey].push(entrega);
-                 return acc;
-             }, {});
-             
-             // Renderiza cada grupo de data (Mantém a ordem decrescente, pois as entregas já vêm ordenadas)
-             for (const data in gruposPorData) {
-                 const grupoDiv = document.createElement('div');
-                 grupoDiv.className = 'data-group-container';
-                 
-                 // Calcula o resumo do dia
-                 const grupo = gruposPorData[data];
-                 const totalDia = grupo.filter(e => e.status === 'fechada').reduce((sum, e) => sum + (e.valorACobrarNumerico || 0), 0);
-                 const ativasDia = grupo.filter(e => e.status !== 'fechada' && e.status !== 'cancelada' && e.status !== 'falha').length;
-                 
-                 // CRIA O CABEÇALHO DO GRUPO
-                 grupoDiv.innerHTML = `
+            const listaCompleta = document.getElementById('listaTodasEntregas');
+            listaCompleta.innerHTML = '';
+            
+            if (entregas.length === 0) {
+                listaCompleta.innerHTML = '<div class="empty-state"><p>Nenhuma entrega no período selecionado.</p></div>';
+                return;
+            }
+            
+            // Agrupa as entregas por data de criação (formato DD/MM/YYYY)
+            const gruposPorData = entregas.reduce((acc, entrega) => {
+                const dataKey = formatarDataParaCabecalho(entrega.created_at);
+                if (!acc[dataKey]) {
+                    acc[dataKey] = [];
+                }
+                acc[dataKey].push(entrega);
+                return acc;
+            }, {});
+            
+            // Renderiza cada grupo de data (Mantém a ordem decrescente, pois as entregas já vêm ordenadas)
+            for (const data in gruposPorData) {
+                const grupoDiv = document.createElement('div');
+                grupoDiv.className = 'data-group-container';
+                
+                // Calcula o resumo do dia
+                const grupo = gruposPorData[data];
+                const totalDia = grupo.filter(e => e.status === 'fechada').reduce((sum, e) => sum + (e.valorACobrarNumerico || 0), 0);
+                const ativasDia = grupo.filter(e => e.status !== 'fechada' && e.status !== 'cancelada' && e.status !== 'falha').length;
+                
+                // CRIA O CABEÇALHO DO GRUPO
+                grupoDiv.innerHTML = `
                     <div class="data-group-header">
                         <h4>📅 Entregas do dia: ${data}</h4>
                         <span class="group-summary">
@@ -1167,15 +1245,15 @@
                             ${ativasDia > 0 ? `<span style="color: #dc3545;">🚨 Ativas/Pendentes: ${ativasDia}</span>` : '✅ Dia Fechado'}
                         </span>
                     </div>
-                 `;
-                 
-                 // Adiciona os itens da lista
-                 grupo.forEach(e => {
-                     grupoDiv.innerHTML += criarItemListaFiscal(e);
-                 });
-                 
-                 listaCompleta.appendChild(grupoDiv);
-             }
+                `;
+                
+                // Adiciona os itens da lista
+                grupo.forEach(e => {
+                    grupoDiv.innerHTML += criarItemListaFiscal(e);
+                });
+                
+                listaCompleta.appendChild(grupoDiv);
+            }
         }
 
         // NOVO: Função para criar o item de lista simples para o Dashboard Fiscal
@@ -1188,7 +1266,8 @@
                 'problema conferencia': 'PROBLEMA NA CONF.', 
                 'fechada': 'FECHADA (OK)', 
                 'cancelada': 'Cancelada',
-                'falha': 'Falha'
+                'falha': 'Falha',
+                'entregue': 'AGUARDANDO CONF.' // Trata status antigo/ambíguo
             }[e.status] || e.status;
             
             // Define se o item deve ter destaque (se for ativo)
@@ -1291,85 +1370,6 @@
                 .attr('class', 'axis-label');
         }
 
-        // --- FUNÇÃO PARA ARQUIVAR (COPIAR + EXCLUIR) ---
-        async function arquivarEntregas() {
-            // Define o limite de arquivamento: entregas fechadas com mais de 7 dias
-            const diasParaManter = 7; 
-            const dataLimite = new Date();
-            dataLimite.setDate(dataLimite.getDate() - diasParaManter);
-            
-            // Filtra as entregas que estão FECHADAS e são mais antigas que o limite
-            const entregasParaArquivar = todasEntregas.filter(e => 
-                e.status === 'fechada' && new Date(e.created_at) < dataLimite
-            );
-
-            if (entregasParaArquivar.length === 0) {
-                 return showMessageBox('Nenhum Arquivamento', `Nenhuma entrega 'Fechada' encontrada com mais de ${diasParaManter} dias para arquivar.`);
-            }
-            
-            const confirmMessage = `Serão COPIADAS ${entregasParaArquivar.length} entregas antigas para a tabela de histórico e DELETADAS da tabela principal. Deseja continuar?`;
-
-            showConfirmBox(
-                '⚠️ Atenção: Arquivamento de Entregas', 
-                confirmMessage,
-                async () => {
-                    if (!window.supabaseClient) {
-                        return showMessageBox('Erro', 'Conexão com o Supabase perdida.');
-                    }
-                    
-                    showMessageBox('⏳ Arquivando...', `Iniciando a cópia e exclusão de ${entregasParaArquivar.length} entregas. Aguarde...`);
-                    
-                    try {
-                        // 1. COPIA PARA A TABELA DE HISTÓRICO
-                        const dadosParaHistorico = entregasParaArquivar.map(e => {
-                            const newEntry = {};
-                            // Copia todas as propriedades renomeando para minúsculas
-                            for (const key in e) {
-                                // Exclui chaves que não são colunas do DB (como displayId)
-                                if (key !== 'displayId') { 
-                                     newEntry[key.toLowerCase()] = e[key];
-                                }
-                            }
-                            // Garante que o ID de origem seja copiado
-                            newEntry.origem_id = e.id; 
-                            return newEntry;
-                        });
-
-                        const { error: insertError } = await window.supabaseClient
-                            .from(SUPABASE_HISTORICO_TABLE)
-                            .insert(dadosParaHistorico);
-                            
-                        if (insertError) {
-                            console.error("Erro ao inserir no histórico:", insertError);
-                            throw new Error(`Falha na CÓPIA para o histórico. Verifique se a tabela "${SUPABASE_HISTORICO_TABLE}" e as regras RLS (INSERT para 'anon') estão corretas.`);
-                        }
-
-                        // 2. DELETA DA TABELA PRINCIPAL
-                        const idsParaDeletar = entregasParaArquivar.map(e => e.id);
-                        
-                        const { error: deleteError } = await window.supabaseClient
-                            .from(SUPABASE_TABLE)
-                            .delete()
-                            .in('id', idsParaDeletar);
-                            
-                        if (deleteError) {
-                            console.error("Erro ao deletar da principal:", deleteError);
-                            throw new Error(`Falha na EXCLUSÃO da tabela principal: ${deleteError.message}`);
-                        }
-                        
-                        // Após deletar, recarrega a lista
-                        await setupSupabaseListener();
-                        
-                        showMessageBox('✅ Sucesso no Arquivamento', `${entregasParaArquivar.length} entregas antigas foram movidas (arquivadas) para o histórico com sucesso!`);
-                        
-                    } catch (error) {
-                         console.error("Erro no Arquivamento:", error);
-                         showMessageBox('❌ Erro Crítico', `${error.message}`);
-                    }
-                }
-            );
-        }
-        
         function mostrarPerformanceEntregadores() {
             mostrarTela('screenPerformance');
             
@@ -1412,26 +1412,63 @@
             carregarDashboardFiscal();
         }
 
+        // --- NOVO: FUNÇÃO PARA LISTAR TODOS OS COLABORADORES ---
+        function listarTodosColaboradores() {
+            const todos = {};
+            
+            // Combine todos os usuários em um único objeto de gestão para a listagem
+            const allUsers = {
+                ...ENTREGADORES,
+                ...ATENDENTES,
+                ...GESTORES
+            };
+            
+            // Remove duplicatas e adiciona a chave 'funcoes'
+            for (const nome in allUsers) {
+                if (!todos[nome]) {
+                    todos[nome] = { 
+                        senha: allUsers[nome].senha, 
+                        telefone: allUsers[nome].telefone || 'N/A',
+                        pontos: allUsers[nome].pontos || 0,
+                        funcoes: []
+                    };
+                }
+
+                // Adiciona as funções atuais (para exibição inicial)
+                if (ENTREGADORES[nome]) todos[nome].funcoes.push('Entregador');
+                if (ATENDENTES[nome]) todos[nome].funcoes.push('Atendente');
+                if (GESTORES[nome]) todos[nome].funcoes.push('Gestor');
+            }
+            
+            return todos;
+        }
+
         function carregarGestaoAdm() {
             mostrarTela('screenAdmin');
             
+            const todosColaboradores = listarTodosColaboradores();
+            
+            // 1. Preencher a lista de Seleção para Gerenciamento
             const select = document.getElementById('entregadorGestaoSelect');
-            select.innerHTML = '<option value="">Selecione um entregador...</option>';
-            // FIX: Adiciona fallback para objeto vazio caso ENTREGADORES seja null/undefined
-            const entregadoresList = ENTREGADORES || {}; 
-            Object.keys(entregadoresList).forEach(nome => {
+            select.innerHTML = '<option value="">Selecione um colaborador...</option>';
+            
+            Object.keys(todosColaboradores).forEach(nome => {
                 const opt = document.createElement('option');
                 opt.value = nome;
-                opt.textContent = nome;
+                // Exibe o nome e as funções primárias para facilitar a identificação
+                opt.textContent = `${nome} (${todosColaboradores[nome].funcoes.join(', ')})`;
                 select.appendChild(opt);
             });
             
+            // 2. Atualiza a lista de Entregadores (apenas para a seção de pontos)
             atualizarListaEntregadores();
         }
-
+        
         function carregarDetalhesGestao() {
             const nome = document.getElementById('entregadorGestaoSelect').value;
             const card = document.getElementById('gestaoCard');
+            const funcoesAtualForm = document.getElementById('funcoesAtualForm');
+            const todosColaboradores = listarTodosColaboradores();
             
             if (!nome) {
                 card.style.display = 'none';
@@ -1439,16 +1476,87 @@
             }
             
             entregadorEmGestao = nome;
-            const dados = ENTREGADORES[nome];
+            const dados = todosColaboradores[nome];
             
             document.getElementById('colabGestaoNome').textContent = nome;
-            document.getElementById('colabGestaoSenha').textContent = dados.senha;
+            // A senha não deve ser exibida, apenas o placeholder do reset
+            document.getElementById('colabGestaoSenha').textContent = 'Oculta por segurança'; 
             document.getElementById('colabGestaoPontos').textContent = `${dados.pontos} Pts`;
+            
+            // Renderiza o formulário de Funções
+            funcoesAtualForm.innerHTML = `
+                <div class="form-group">
+                    <label>Funções Atuais</label>
+                    <p>
+                        ${dados.funcoes.map(f => `<span class="status-badge ${f === 'Entregador' ? 'status-emrota' : f === 'Atendente' ? 'status-pendente' : 'status-fechada'}">${f}</span>`).join(' ')}
+                    </p>
+                </div>
+                <div class="form-group">
+                    <label>Alterar/Marcar Funções (Pode ter mais de uma)</label>
+                    <div class="checkbox-group multi-checkbox">
+                        <input type="checkbox" id="checkEntregador" value="Entregador" ${dados.funcoes.includes('Entregador') ? 'checked' : ''}>
+                        <label for="checkEntregador">Entregador (Pontuação)</label>
+                    </div>
+                    <div class="checkbox-group multi-checkbox">
+                        <input type="checkbox" id="checkAtendente" value="Atendente" ${dados.funcoes.includes('Atendente') ? 'checked' : ''}>
+                        <label for="checkAtendente">Caixa/Atendente</label>
+                    </div>
+                    <div class="checkbox-group multi-checkbox">
+                        <input type="checkbox" id="checkGestor" value="Gestor" ${dados.funcoes.includes('Gestor') ? 'checked' : ''}>
+                        <label for="checkGestor">Gestor (ADM)</label>
+                    </div>
+                    <button class="btn-primary btn-verde" onclick="salvarFuncoesColaborador('${nome}')" style="margin-top: 10px;">Salvar Funções</button>
+                </div>
+            `;
+
+
+            // Mostra o card
             card.style.display = 'block';
         }
 
+        // --- NOVO: FUNÇÃO PARA SALVAR MÚLTIPLAS FUNÇÕES ---
+        function salvarFuncoesColaborador(nome) {
+            const isEntregador = document.getElementById('checkEntregador').checked;
+            const isAtendente = document.getElementById('checkAtendente').checked;
+            const isGestor = document.getElementById('checkGestor').checked;
+            
+            // Pega os dados base (senha, telefone)
+            const baseUser = {
+                 senha: (ENTREGADORES[nome] || ATENDENTES[nome] || GESTORES[nome]).senha,
+                 telefone: (ENTREGADORES[nome] || ATENDENTES[nome] || GESTORES[nome]).telefone || '',
+            };
+            
+            // 1. Limpa o usuário de todas as listas (para evitar duplicatas)
+            delete ENTREGADORES[nome];
+            delete ATENDENTES[nome];
+            delete GESTORES[nome];
+
+            // 2. Adiciona o usuário nas listas corretas
+            if (isEntregador) {
+                // Mantém/re-inicializa os campos específicos do entregador
+                ENTREGADORES[nome] = { ...baseUser, pontos: ENTREGADORES[nome]?.pontos || 0, historicoPontos: ENTREGADORES[nome]?.historicoPontos || [] };
+            }
+            if (isAtendente) {
+                ATENDENTES[nome] = { ...baseUser };
+            }
+            if (isGestor) {
+                GESTORES[nome] = { ...baseUser };
+            }
+            
+            if (!isEntregador && !isAtendente && !isGestor) {
+                return showMessageBox('⚠️ Erro', 'O colaborador deve ter pelo menos uma função marcada!');
+            }
+
+            salvarEntregadores();
+            carregarDetalhesGestao(); // Recarrega o painel
+            carregarGestaoAdm(); // Atualiza a lista principal de seleção
+            showMessageBox('✅ Sucesso', `Funções de ${nome} atualizadas com sucesso!`);
+        }
+
         function ajustarPontosEntregador(acao) {
-            if (!entregadorEmGestao) return;
+            if (!entregadorEmGestao || !ENTREGADORES[entregadorEmGestao]) {
+                 return showMessageBox('⚠️ Erro', 'Colaborador não é um Entregador ou não está selecionado.');
+            }
             
             const pontos = prompt(`Quantos pontos deseja ${acao === 'adicionar' ? 'ADICIONAR' : 'REMOVER'}?`);
             if (!pontos || isNaN(pontos) || pontos <= 0) {
@@ -1472,7 +1580,11 @@
             if (!entregadorEmGestao) return;
             
             showConfirmBox('Confirmação', `Deseja resetar a senha de ${entregadorEmGestao} para "${SENHA_RESET}"?`, () => {
-                ENTREGADORES[entregadorEmGestao].senha = SENHA_RESET;
+                // Reseta a senha em todas as listas onde ele existir
+                if (ENTREGADORES[entregadorEmGestao]) ENTREGADORES[entregadorEmGestao].senha = SENHA_RESET;
+                if (ATENDENTES[entregadorEmGestao]) ATENDENTES[entregadorEmGestao].senha = SENHA_RESET;
+                if (GESTORES[entregadorEmGestao]) GESTORES[entregadorEmGestao].senha = SENHA_RESET;
+
                 salvarEntregadores();
                 carregarDetalhesGestao();
                 showMessageBox('✅ Sucesso', 'Senha resetada com sucesso!');
@@ -1492,44 +1604,51 @@
                 document.getElementById('gestaoCard').style.display = 'none';
                 document.getElementById('entregadorGestaoSelect').value = '';
                 atualizarListaEntregadores();
-                showMessageBox('✅ Sucesso', 'Entregador removido com sucesso!');
+                carregarGestaoAdm(); // Recarrega a lista principal
+                showMessageBox('✅ Sucesso', 'Colaborador removido com sucesso!');
             });
         }
 
-        function adicionarEntregador() {
-            const nome = document.getElementById('novoEntregadorNome').value.trim();
-            const senha = document.getElementById('novoEntregadorSenha').value.trim();
-            const telefone = document.getElementById('novoEntregadorTelefone').value.trim();
+        // Renomeada a função e ajustado para o novo formulário
+        function adicionarColaborador() {
+            const nome = document.getElementById('novoColaboradorNome').value.trim();
+            const senha = document.getElementById('novoColaboradorSenha').value.trim();
+            const telefone = document.getElementById('novoColaboradorTelefone').value.trim();
+            const funcao = document.getElementById('novoColaboradorFuncao').value;
             
-            if (!nome || !senha) {
-                showMessageBox('⚠️ Erro', 'Nome e senha são obrigatórios!');
+            if (!nome || !senha || !funcao) {
+                showMessageBox('⚠️ Erro', 'Nome, Senha e Função são obrigatórios!');
                 return;
             }
             
-            if (ENTREGADORES[nome]) {
-                showMessageBox('⚠️ Erro', 'Este entregador já existe!');
+            // Verifica se o nome já existe em qualquer lista
+            if (ENTREGADORES[nome] || ATENDENTES[nome] || GESTORES[nome]) {
+                showMessageBox('⚠️ Erro', `O colaborador "${nome}" já existe em alguma função!`);
                 return;
             }
             
-            ENTREGADORES[nome] = {
-                senha: senha,
-                telefone: telefone || '',
-                pontos: 0,
-                historicoPontos: []
-            };
+            const dadosColaborador = { senha: senha, telefone: telefone || '' };
+
+            if (funcao === 'Entregador') {
+                dadosColaborador.pontos = 0;
+                dadosColaborador.historicoPontos = [];
+                ENTREGADORES[nome] = dadosColaborador;
+            } else if (funcao === 'Atendente') {
+                ATENDENTES[nome] = dadosColaborador;
+            } else if (funcao === 'Gestor') {
+                 GESTORES[nome] = dadosColaborador;
+            }
             
             salvarEntregadores();
-            document.getElementById('novoEntregadorNome').value = '';
-            document.getElementById('novoEntregadorSenha').value = '';
-            document.getElementById('novoEntregadorTelefone').value = '';
+            document.getElementById('formNovoColaborador').reset(); // Limpa o novo formulário
             atualizarListaEntregadores();
             carregarGestaoAdm(); 
-            showMessageBox('✅ Sucesso', `Entregador ${nome} adicionado com sucesso!`);
+            showMessageBox('✅ Sucesso', `Colaborador ${nome} (${funcao}) adicionado com sucesso!`);
         }
 
         function atualizarListaEntregadores() {
             const lista = document.getElementById('listaEntregadoresAdm');
-            // FIX: Adiciona fallback para objeto vazio caso ENTREGADORES seja null/undefined
+            // A lista de baixo (Entregadores) só deve listar aqueles que são Entregadores
             const entregadoresList = ENTREGADORES || {}; 
             lista.innerHTML = Object.entries(entregadoresList).map(([nome, dados]) => `
                 <div class="adm-item">
@@ -1541,334 +1660,7 @@
             `).join('');
         }
 
-        // --- FUNÇÕES DE MODAL QUE ESTAVAM FALTANDO ---
-        
-        function abrirModalAnexo(docId) {
-            const entrega = todasEntregas.find(e => e.id == docId);
-            if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
-            
-            window.entregaParaFinalizarId = docId;
-            const anexoInputEntregador = document.getElementById('anexoInputEntregador');
-            if (anexoInputEntregador) anexoInputEntregador.value = '';
-            const obsAnexoEntregador = document.getElementById('obsAnexoEntregador');
-            if (obsAnexoEntregador) obsAnexoEntregador.value = '';
-            const modalAnexo = document.getElementById('modalAnexo');
-            if (modalAnexo) modalAnexo.classList.add('active');
-        }
-
-        function fecharModalAnexo() {
-            const modalAnexo = document.getElementById('modalAnexo');
-            if (modalAnexo) modalAnexo.classList.remove('active');
-            const anexoInputEntregador = document.getElementById('anexoInputEntregador');
-            if (anexoInputEntregador) anexoInputEntregador.value = '';
-            const obsAnexoEntregador = document.getElementById('obsAnexoEntregador');
-            if (obsAnexoEntregador) obsAnexoEntregador.value = '';
-            window.entregaParaFinalizarId = null;
-        }
-
-        function confirmarAnexo() {
-            const docId = window.entregaParaFinalizarId;
-            const entrega = todasEntregas.find(e => e.id == docId);
-            
-            const fileInput = document.getElementById('anexoInputEntregador');
-            const fotoFile = fileInput && fileInput.files ? fileInput.files[0] : null;
-            const obs = document.getElementById('obsAnexoEntregador') ? document.getElementById('obsAnexoEntregador').value.trim() : '';
-            
-            if (entrega.pagamento === 'Pix' || entrega.pagamento === 'Cartão') {
-                if (!fotoFile) {
-                    showMessageBox('⚠️ Erro', 'Anexo do comprovante é obrigatório.');
-                    return;
-                }
-                
-                finalizarEntregaComAnexo(docId, fotoFile, obs); 
-                fecharModalAnexo();
-            } else {
-                 finalizarEntregaComAnexo(docId, null, obs); 
-                 fecharModalAnexo();
-            }
-        }
-
-        async function finalizarEntregaComAnexo(docId, fotoFile, obs) {
-             let comprovanteUrl = 'Não aplicável';
-             const entrega = todasEntregas.find(e => e.id == docId);
-
-             if (fotoFile) { 
-                 comprovanteUrl = await uploadComprovante(fotoFile, entrega.clienteNome, 'entregador');
-                 if (!comprovanteUrl) return; 
-             }
-
-             const updates = {
-                 status: 'aguardando conferencia', // <--- CORREÇÃO: Mudar para 'aguardando conferencia'
-                 finalizadoem: new Date().toISOString(), 
-                 observacao: obs,
-                 comprovanteentregador: comprovanteUrl 
-             };
-             
-             if (await atualizarEntrega(docId, updates)) {
-                 showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso e enviada para conferência!');
-                 setupSupabaseListener(); // FORÇA ATUALIZAÇÃO IMEDIATA
-             }
-        }
-
-        function fecharModal() {
-            const modalDetalhes = document.getElementById('modalDetalhes');
-            if (modalDetalhes) modalDetalhes.classList.remove('active');
-        }
-
-        function abrirModalCancelamento(docId, tipo) {
-            acaoCancelamentoDocId = docId;
-            acaoCancelamentoTipo = tipo;
-            
-            const modalCancelTitle = document.getElementById('modalCancelTitle');
-            const btnConfirmar = document.querySelector('#modalCancelamento .modal-btn.danger');
-
-            if (tipo === 'cancelada') {
-                if (modalCancelTitle) modalCancelTitle.textContent = '❌ Cancelar Entrega (Caixa)';
-                if (btnConfirmar) {
-                    btnConfirmar.textContent = 'Confirmar Cancelamento';
-                    btnConfirmar.classList.add('danger');
-                    btnConfirmar.classList.remove('btn-falha');
-                }
-            } else if (tipo === 'falha') {
-                if (modalCancelTitle) modalCancelTitle.textContent = '⚠️ Registrar Falha na Entrega (Entregador)';
-                if (btnConfirmar) {
-                    btnConfirmar.textContent = 'Registrar Falha';
-                    btnConfirmar.classList.remove('danger');
-                    btnConfirmar.classList.add('btn-falha');
-                }
-            }
-
-            const modalCancelamento = document.getElementById('modalCancelamento');
-            if (modalCancelamento) modalCancelamento.classList.add('active');
-        }
-
-        function fecharModalCancelamento() {
-            const modalCancelamento = document.getElementById('modalCancelamento');
-            if (modalCancelamento) modalCancelamento.classList.remove('active');
-            acaoCancelamentoDocId = null;
-            acaoCancelamentoTipo = null;
-        }
-
-        async function confirmarModalCancelamento() {
-            const motivo = document.getElementById('motivoCancelamentoInput') ? document.getElementById('motivoCancelamentoInput').value.trim() : '';
-            const obs = document.getElementById('obsCancelamentoTextarea') ? document.getElementById('obsCancelamentoTextarea').value.trim() : '';
-            const docId = acaoCancelamentoDocId;
-            const tipo = acaoCancelamentoTipo;
-
-            if (!motivo) {
-                showMessageBox('⚠️ Erro', 'O Motivo do Cancelamento/Falha é obrigatório.');
-                return;
-            }
-
-            const updates = {
-                status: tipo, 
-                finalizadoem: new Date().toISOString(),
-                observacao: obs || null,
-            };
-            
-            let sucessoMsg = '';
-            
-            if (tipo === 'cancelada') {
-                 updates.motivocancelamento = motivo;
-                 updates.canceladopor = usuarioLogado;
-                 updates.entregador = updates.entregador || 'N/A';
-                 sucessoMsg = `Entrega CANCELADA com sucesso! Motivo: ${motivo}`;
-            } else if (tipo === 'falha') {
-                 updates.motivofalha = motivo;
-                 updates.entregador = updates.entregador || usuarioLogado;
-                 updates.saiuem = updates.saiuem || new Date().toISOString();
-                 updates.criadopor = updates.criadopor || usuarioLogado;
-                 sucessoMsg = `Falha registrada com sucesso! Motivo: ${motivo}`;
-            }
-            
-            if (await atualizarEntrega(docId, updates)) {
-                showMessageBox('✅ Sucesso', sucessoMsg);
-                fecharModalCancelamento();
-                setupSupabaseListener(); // FORÇA ATUALIZAÇÃO APÓS CANCELAMENTO/FALHA
-            }
-        }
-
-        // --- FUNÇÕES DE CONFERÊNCIA ---
-        
-        function confirmarConferencia(id) {
-            showConfirmBox('Confirmação', 'Deseja confirmar a conferência desta entrega?', async () => {
-                const updates = {
-                    status: 'fechada',
-                    conferidopor: usuarioLogado,
-                    conferidoem: new Date().toISOString(),
-                    problemaconferencia: null // Limpa qualquer problema anterior
-                };
-                
-                if (await atualizarEntrega(id, updates)) {
-                    showMessageBox('✅ Sucesso', 'Conferência confirmada com sucesso!');
-                    // REMOVIDO: carregarConferenciaCaixa(); // Deixa o listener fazer isso
-                    setupSupabaseListener(); // FORÇA ATUALIZAÇÃO APÓS FECHAMENTO
-                }
-            });
-        }
-
-        function abrirModalConferenciaProblema(id) {
-            conferenciaProblemaDocId = id;
-            const modal = document.getElementById('modalConferenciaProblema');
-            if (modal) modal.classList.add('active');
-        }
-
-        function fecharModalConferenciaProblema() {
-            const modal = document.getElementById('modalConferenciaProblema');
-            if (modal) modal.classList.remove('active');
-            conferenciaProblemaDocId = null;
-        }
-
-        async function confirmarProblemaConferencia() {
-            const motivo = document.getElementById('motivoProblemaConferenciaInput') ? document.getElementById('motivoProblemaConferenciaInput').value.trim() : '';
-            
-            if (!motivo) {
-                showMessageBox('⚠️ Erro', 'O motivo do problema é obrigatório.');
-                return;
-            }
-
-            const updates = {
-                status: 'problema conferencia',
-                problemaconferencia: motivo,
-                conferidopor: usuarioLogado,
-                conferidoem: new Date().toISOString()
-            };
-            
-            if (await atualizarEntrega(conferenciaProblemaDocId, updates)) {
-                showMessageBox('✅ Sucesso', 'Problema registrado com sucesso!');
-                fecharModalConferenciaProblema();
-                // REMOVIDO: carregarConferenciaCaixa(); // Deixa o listener fazer isso
-                setupSupabaseListener(); // FORÇA ATUALIZAÇÃO APÓS REGISTRO DE PROBLEMA
-            }
-        }
-
-        // --- FUNÇÕES DE CRIAÇÃO DE CARDS ---
-        
-        function mostrarDetalhes(docId) {
-             const entrega = todasEntregas.find(e => e.id == docId);
-             if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
-
-             let content = `
-                 <h2 style="color: #d63031;">Detalhes da Entrega ${entrega.displayId || entrega.id}</h2>
-                 <p><strong>Status:</strong> <span class="status-badge status-${entrega.status.replace(/\s/g, '').toLowerCase()}">${entrega.status.toUpperCase()}</span></p>
-                 <hr style="margin: 15px 0;">
-                 <h4>Cliente e Destino</h4>
-                 <p><strong>Cliente:</strong> ${entrega.clienteNome}</p>
-                 <p><strong>Endereço:</strong> ${entrega.endereco}</p>
-                 <p><strong>Bairro:</strong> ${entrega.bairro}</p>
-                 <p><strong>Telefone:</strong> ${formatarTelefone(entrega.telefone)}</p>
-                 <p><strong>Geladeira:</strong> ${entrega.geladeira}</p>
-                 <hr style="margin: 15px 0;">
-                 <h4>Financeiro e Logística</h4>
-                 <p><strong>Valor Total:</strong> ${entrega.valorACobrar || entrega.valor}</p>
-                 <p><strong>Pagamento:</strong> ${entrega.pagamento} (${entrega.jaPago === 'SIM' ? 'JÁ PAGO' : 'COBRAR'})</p>
-                 <p><strong>Troco Necessário:</strong> ${entrega.troco}</p>
-                 <p><strong>Recibo/NFe:</strong> ${entrega.recibo}</p>
-                 <p><strong>Caixa/Origem:</strong> ${entrega.caixa} (Operador: ${entrega.operadorCaixa})</p>
-                 <p><strong>Observação Caixa:</strong> ${entrega.observacaoCaixa || 'N/A'}</p>
-                 <hr style="margin: 15px 0;">
-                 <h4>Timeline</h4>
-                 <p><strong>Criada em:</strong> ${formatSupabaseDate(entrega.created_at)}</p>
-                 <p><strong>Entregador:</strong> ${entrega.entregador || 'Aguardando Atribuição'}</p>
-                 <p><strong>Saiu em:</strong> ${formatSupabaseDate(entrega.saiuEm)}</p>
-                 <p><strong>Finalizada em:</strong> ${formatSupabaseDate(entrega.finalizadoEm)}</p>
-                 <p><strong>Observações (Entregador):</strong> ${entrega.observacao || 'N/A'}</p>
-             `;
-             
-             if (entrega.motivoFalha) {
-                  content += `<p style="color: #dc3545;"><strong>Motivo Falha/Cancelamento:</strong> ${entrega.motivoFalha || entrega.motivoCancelamento}</p>`;
-             }
-
-             if (entrega.comprovante && entrega.comprovante.startsWith('http')) {
-                  content += `
-                      <h4>📸 Comprovante do Caixa (Antecipado)</h4>
-                      <img src="${entrega.comprovante}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
-                  `;
-             }
-             
-             if (entrega.comprovanteEntregador && entrega.comprovanteEntregador.startsWith('http')) {
-                  content += `
-                      <h4>📸 Comprovante do Entregador</h4>
-                      <img src="${entrega.comprovanteEntregador}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
-                  `;
-             }
-
-             const modalConteudo = document.getElementById('modalConteudo');
-             if (modalConteudo) modalConteudo.innerHTML = content;
-             const modalDetalhes = document.getElementById('modalDetalhes');
-             if (modalDetalhes) modalDetalhes.classList.add('active');
-           }
-
-        function falhaEntregaAcao(docId) {
-            acaoCancelamentoDocId = docId;
-            acaoCancelamentoTipo = 'falha';
-            
-            const btnConfirmar = document.getElementById('btnConfirmarCancelamento');
-            if (btnConfirmar) {
-                btnConfirmar.onclick = confirmarModalCancelamento;
-                btnConfirmar.textContent = 'Registrar Falha';
-                btnConfirmar.classList.remove('danger');
-                btnConfirmar.classList.add('btn-falha'); 
-            }
-            
-            const modalCancelTitle = document.getElementById('modalCancelTitle');
-            if (modalCancelTitle) modalCancelTitle.textContent = '⚠️ Registrar Falha na Entrega';
-            const motivoCancelamentoInput = document.getElementById('motivoCancelamentoInput');
-            if (motivoCancelamentoInput) motivoCancelamentoInput.value = '';
-            const obsCancelamentoTextarea = document.getElementById('obsCancelamentoTextarea');
-            if (obsCancelamentoTextarea) obsCancelamentoTextarea.value = '';
-            const modalCancelamento = document.getElementById('modalCancelamento');
-            if (modalCancelamento) modalCancelamento.classList.add('active');
-        }
-        
-        // Funções anteriores de finalização foram unidas e corrigidas
-        function finalizarEntrega(docId) {
-             const entrega = todasEntregas.find(e => e.id == docId);
-             if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
-
-             // Se for necessário cobrar, pede confirmação
-             if (entrega.jaPago === 'NÃO' && entrega.pagamento === 'Dinheiro') {
-                  showConfirmBox('🚨 Cobrança Pendente', `Confirma que o valor ${entrega.valorACobrar || entrega.valor} foi cobrado do cliente?`, () => {
-                      continuarFinalizarEntrega(docId, entrega);
-                  });
-                  return; 
-             }
-             
-             continuarFinalizarEntrega(docId, entrega);
-        }
-        
-        async function continuarFinalizarEntrega(docId, entrega) {
-             // Se for Pix ou Cartão, abre o modal de anexo (ponto de entrada unificado)
-             if (entrega.pagamento === 'Pix' || entrega.pagamento === 'Cartão') {
-                 window.entregaParaFinalizarId = docId; 
-                 const anexoInputEntregador = document.getElementById('anexoInputEntregador');
-                 if (anexoInputEntregador) anexoInputEntregador.value = '';
-                 const obsAnexoEntregador = document.getElementById('obsAnexoEntregador');
-                 if (obsAnexoEntregador) obsAnexoEntregador.value = '';
-                 const modalAnexo = document.getElementById('modalAnexo');
-                 if (modalAnexo) modalAnexo.classList.add('active');
-                 
-                 return; 
-             }
-
-             // Se for Dinheiro (e já foi confirmado na tela anterior, ou se foi pago antecipado), finaliza sem anexo
-             // NOTA: 'prompt' é usado para fins de teste no Canvas, mas deve ser substituído por um modal/input customizado em produção.
-             const obs = prompt('Observação da entrega (ex: Entregue ao vizinho, Deixado na caixa de correio). (Opcional):');
-             
-             const updates = {
-                 status: 'aguardando conferencia', // <--- CORREÇÃO: Mudar para 'aguardando conferencia'
-                 finalizadoem: new Date().toISOString(),
-                 observacao: obs,
-                 comprovanteentregador: 'Não aplicável'
-             };
-
-             if (await atualizarEntrega(docId, updates)) {
-                 showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso e enviada para conferência!');
-                 setupSupabaseListener(); // FORÇA ATUALIZAÇÃO IMEDIATA
-             }
-        }
-
-        // --- FUNÇÃO DE MODO DARK ---
+        // --- FUNÇÕES DE MODO DARK (MANTIDAS) ---
         function toggleDarkMode() {
             const body = document.body;
             const darkModeToggle = document.getElementById('darkModeToggle');
@@ -1884,7 +1676,6 @@
             }
         }
 
-        // Carregar preferência do modo dark ao inicializar
         function loadDarkModePreference() {
             const darkMode = localStorage.getItem('darkMode');
             const darkModeToggle = document.getElementById('darkModeToggle');
@@ -1897,7 +1688,6 @@
             }
         }
 
-        // Chamar a função quando a página carregar
         document.addEventListener('DOMContentLoaded', loadDarkModePreference);
         
     </script>
@@ -2279,6 +2069,16 @@
             border-left: 4px solid #dc3545 !important;
             background-color: rgba(220, 53, 69, 0.05);
         }
+        /* ANIMAÇÃO DE ALERTA URGENTE (Para Entregador) */
+        .pulse-urgent {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }
+            70% { box-shadow: 0 0 0 15px rgba(220, 53, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+        }
+
         .entrega-header {
             display: flex;
             justify-content: space-between;
@@ -2738,6 +2538,9 @@
              margin-bottom: 10px;
              margin-top: 5px;
         }
+        .checkbox-group.multi-checkbox {
+            justify-content: flex-start;
+        }
         .checkbox-group input {
             width: auto;
             margin-right: 10px;
@@ -3098,6 +2901,18 @@
                         </div>
                     </div>
 
+                    <!-- NOVO: RELATÓRIO DE TAXAS -->
+                    <div class="stats-grid">
+                        <div class="stat-card" style="border-color: #3d4b7a;">
+                            <div class="stat-number" id="totalTaxasCobradas">R$ 0,00</div>
+                            <div class="stat-label">Total de Taxas de Entrega COBRADAS</div>
+                        </div>
+                        <div class="stat-card" style="border-color: #ffc107;">
+                            <div class="stat-number orange" id="totalTaxasIsentas">0 Entregas</div>
+                            <div class="stat-label">Entregas com Taxa ISENTA</div>
+                        </div>
+                    </div>
+                    
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-number" id="totalPendentes">0</div>
@@ -3131,6 +2946,7 @@
                     <hr style="margin: 20px 0;">
                     <!-- Botão de Arquivamento (agora com cópia + exclusão) -->
                     <button class="btn-voltar btn-remover-user" onclick="arquivarEntregas()" style="margin-bottom: 15px; background: #007bff; color: white;">📁 ARQUIVAR ENTREGAS </button>
+                    <button class="btn-voltar btn-remover-user" onclick="excluirTodasEntregas()" style="margin-bottom: 15px; background: #dc3545; color: white;">🚨 DELETAR TUDO (SENHA)</button>
                     <hr style="margin: 20px 0;">
 
                     <h3>Histórico de Entregas (Detalhado)</h3>
@@ -3169,9 +2985,9 @@
                 </div>
                 
                 <div id="screenAdmin" class="screen">
-                    <h2>⚙️ Gestão de Entregadores</h2>
+                    <h2>⚙️ Gestão de Colaboradores</h2>
                     
-                    <h4 style="color: #3d4b7a;">Selecione o Entregador para Gerenciar:</h4>
+                    <h4 style="color: #3d4b7a;">Selecione o Colaborador para Gerenciar:</h4>
                     <div class="form-group">
                         <select id="entregadorGestaoSelect" onchange="carregarDetalhesGestao()"></select>
                     </div>
@@ -3179,9 +2995,14 @@
                     <div id="gestaoDetalhesContainer">
                         <div id="gestaoCard" class="gestao-card" style="display:none;">
                             <p>Colaborador: <strong><span id="colabGestaoNome"></span></strong></p>
-                            <p>Senha: <strong><span id="colabGestaoSenha"></span></strong></p>
+                            <p>Senha: <strong><span id="colabGestaoSenha">Oculta por segurança</span></strong></p>
                             <h3 style="margin-top: 10px;">Pontuação Atual: <span id="colabGestaoPontos" style="color: #d63031;">0 Pts</span></h3>
                             
+                            <!-- NOVO: Seção para gerenciar Funções -->
+                            <div id="funcoesAtualForm">
+                                <!-- O conteúdo será injetado por carregarDetalhesGestao() -->
+                            </div>
+
                             <div class="gestao-actions-grid">
                                 <button class="btn-add-points" onclick="ajustarPontosEntregador('adicionar')">➕ Adicionar Pontos</button>
                                 <button class="btn-remove-points" onclick="ajustarPontosEntregador('remover')">➖ Retirar Pontos</button>
@@ -3191,20 +3012,35 @@
                         </div>
                         
                         <h4 style="color: #3d4b7a; margin: 20px 0 10px;">Lista de Entregadores</h4>
+                        <p style="font-size: 12px; color: var(--text-secondary);">Apenas colaboradores com a função "Entregador" são exibidos abaixo para gestão de pontos.</p>
                         <div id="listaEntregadoresAdm"></div>
                     </div>
 
-                    <h4 style="color: #3d4b7a;">➕ Adicionar Novo Entregador</h4>
-                    <div class="form-group">
-                        <input type="text" id="novoEntregadorNome" placeholder="Nome do Entregador">
-                    </div>
-                    <div class="form-group">
-                        <input type="password" id="novoEntregadorSenha" placeholder="Senha">
-                    </div>
-                    <div class="form-group">
-                        <input type="tel" id="novoEntregadorTelefone" placeholder="Telefone (opcional)">
-                    </div>
-                    <button class="btn-primary" onclick="adicionarEntregador()">Adicionar</button>
+                    <h4 style="color: #3d4b7a;">➕ ADICIONAR NOVO COLABORADOR</h4>
+                    <form id="formNovoColaborador">
+                        <div class="form-group">
+                            <label>Função *</label>
+                            <select id="novoColaboradorFuncao" required>
+                                <option value="">Selecione a Função *</option>
+                                <option value="Entregador">Entregador</option>
+                                <option value="Atendente">Caixa/Atendente</option>
+                                <option value="Gestor">Gestor (Acesso Total)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Nome *</label>
+                            <input type="text" id="novoColaboradorNome" placeholder="Nome completo do Colaborador">
+                        </div>
+                        <div class="form-group">
+                            <label>Senha *</label>
+                            <input type="password" id="novoColaboradorSenha" placeholder="Senha inicial">
+                        </div>
+                        <div class="form-group">
+                            <label>Telefone</label>
+                            <input type="tel" id="novoColaboradorTelefone" placeholder="Telefone (opcional)">
+                        </div>
+                        <button type="button" class="btn-primary" onclick="adicionarColaborador()">Adicionar</button>
+                    </form>
 
                     <button class="btn-voltar" onclick="irParaDashboardFiscal()">← Voltar</button>
                 </div>
@@ -3285,4 +3121,3 @@
     </div>
 </body>
 </html>
-
