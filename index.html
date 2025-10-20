@@ -29,7 +29,6 @@
         let usuarioLogado = null;
         let tipoUsuario = null; 
         let tipoLoginAtual = null;
-        // ... (Outras variáveis globais mantidas) ...
         const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
         const SENHA_RESET = 'RB@ENTREGA'; 
         const ORIGEM_MAPS = 'Supermercado Rio Branco, Garça, SP, Brasil'; 
@@ -61,8 +60,8 @@
                  console.error("Erro: Elementos do modal não encontrados. O DOM pode não ter carregado completamente.");
                  // Retorna true se encontrou, false se falhou.
                  return false; 
-            }
-            return true;
+             }
+             return true;
         }
 
         function showMessageBox(title, message) {
@@ -107,11 +106,11 @@
             const seconds = diffInSeconds % 60;
 
             if (hours > 0) {
-                 return `${hours}h ${minutes}min`;
+                return `${hours}h ${minutes}min`;
             } else if (minutes > 0) {
-                 return `${minutes} min ${seconds}s`;
+                return `${minutes} min ${seconds}s`;
             } else {
-                 return `${seconds}s`;
+                return `${seconds}s`;
             }
         }
         
@@ -205,10 +204,10 @@
             
             let troco = 0;
             if (valorRecebido > valorTotal) {
-                 // Calcula o troco com precisão, arredondando para evitar erros de ponto flutuante.
-                 troco = parseFloat((valorRecebido - valorTotal).toFixed(2));
+                // Calcula o troco com precisão, arredondando para evitar erros de ponto flutuante.
+                troco = parseFloat((valorRecebido - valorTotal).toFixed(2));
             } else {
-                 troco = 0;
+                troco = 0;
             }
             
             // CORREÇÃO: Formata o valor de troco APENAS para exibição no input de texto
@@ -217,8 +216,8 @@
 
             // Validação visual simples para alertar o caixa
             if (valorRecebido > 0 && valorRecebido < valorTotal) {
-                 trocoDevolverInput.value = 'R$ 0,00';
-                 trocoDevolverInput.classList.add('troco-negativo');
+                trocoDevolverInput.value = 'R$ 0,00';
+                trocoDevolverInput.classList.add('troco-negativo');
             }
         }
 
@@ -465,7 +464,7 @@
             const observacaoCaixa = document.getElementById('observacaoCaixa').value.trim();
             const urgente = document.getElementById('entregaUrgente').value;
             const isentarTaxa = document.getElementById('isentarTaxa').checked; 
-
+            
             
             // 1. Validação de campos obrigatórios
             if (!caixa || !nome || !endereco || !bairro || !geladeira || !status || !valor || !urgente) {
@@ -513,6 +512,7 @@
                 clientenome: nome, // Corrigido para minúsculas
                 endereco: endereco,
                 bairro: bairro,
+                // publicidade: publicidade, // Removido campo não existente
                 telefone: telefone,
                 geladeira: geladeira,
                 pagamento: forma,
@@ -630,6 +630,8 @@
                 })).reverse(); // Inverte para mostrar o mais novo no topo da lista
                 
                 console.log(`[Supabase] Dados de entregas carregados. Total: ${todasEntregas.length}`);
+                
+                // Atualiza todas as telas APÓS recarregar os dados do Supabase
                 atualizarTelas(); 
 
                 // 3. Configura o listener Realtime
@@ -872,7 +874,7 @@
             
             const totalCobranca = emRota.reduce((sum, e) => {
                  if (e.jaPago === 'NÃO' && (e.pagamento === 'Dinheiro' || e.pagamento === 'Pix' || e.pagamento === 'Cartão')) {
-                     return sum + (e.valorACobrarNumerico || 0);
+                      return sum + (e.valorACobrarNumerico || 0);
                  }
                  return sum;
             }, 0);
@@ -950,24 +952,27 @@
             
             if (e.jaPago === 'SIM') {
                  valorSection = `
-                    <div class="entrega-info" style="margin-top: 10px;">
-                        <strong style="color: #28a745;">✅ VALOR PAGO:</strong> ${valorACobrar}
-                    </div>
-                    ${e.taxaEntregaNumerica > 0 || e.isentarTaxa === 'Sim' ? `<div class="entrega-info" style="font-size: 13px; font-style: italic;">Detalhe: Pedido ${e.valor} ${infoTaxaDisplay}</div>` : ''}
-                 `;
+                     <div class="entrega-info" style="margin-top: 10px;">
+                         <strong style="color: #28a745;">✅ VALOR PAGO:</strong> ${valorACobrar}
+                     </div>
+                     ${e.taxaEntregaNumerica > 0 || e.isentarTaxa === 'Sim' ? `<div class="entrega-info" style="font-size: 13px; font-style: italic;">Detalhe: Pedido ${e.valor} ${infoTaxaDisplay}</div>` : ''}
+                   `;
             } else {
                  valorSection = `
-                    <div class="entrega-info" style="margin-top: 10px;">
-                        <strong style="color: ${isDinheiroComTroco ? '#dc3545' : '#d63031'};">💰 VALOR A COBRAR:</strong> ${valorACobrar} <span class="cobrar-badge">COBRAR</span> ${trocoBadge}
-                    </div>
-                    ${e.taxaEntregaNumerica > 0 || e.isentarTaxa === 'Sim' ? `<div class="entrega-info" style="font-size: 13px; font-style: italic;">Detalhe: Pedido ${e.valor} ${infoTaxaDisplay}</div>` : ''}
-                 `;
+                     <div class="entrega-info" style="margin-top: 10px;">
+                         <strong style="color: ${isDinheiroComTroco ? '#dc3545' : '#d63031'};">💰 VALOR A COBRAR:</strong> ${valorACobrar} <span class="cobrar-badge">COBRAR</span> ${trocoBadge}
+                     </div>
+                     ${e.taxaEntregaNumerica > 0 || e.isentarTaxa === 'Sim' ? `<div class="entrega-info" style="font-size: 13px; font-style: italic;">Detalhe: Pedido ${e.valor} ${infoTaxaDisplay}</div>` : ''}
+                   `;
             }
             
             let tempoNaRota = '';
             if (tipo === 'emrota' && e.saiuEm) {
                  tempoNaRota = `<div class="entrega-info tempo-rota">⏱️ Tempo na Rota: ${formatTimeDuration(e.saiuEm)}</div>`;
             }
+            
+            // NOVO: Exibir Observação do Caixa para entregadores
+            const obsCaixaDisplay = e.observacaoCaixa ? `<div class="entrega-info obs-caixa"><strong>📢 Obs. Caixa:</strong> ${e.observacaoCaixa}</div>` : '';
 
 
             return `
@@ -984,7 +989,7 @@
                     
                     <div class="entrega-info"><strong>💳 Pagamento:</strong> ${e.pagamento || 'Não informado'} ${gelaBadge}</div>
                     ${tempoNaRota}
-                    ${e.observacaoCaixa ? `<div class="entrega-info obs-caixa"><strong>📢 Obs. Caixa:</strong> ${e.observacaoCaixa}</div>` : ''}
+                    ${obsCaixaDisplay}
                     ${e.problemaConferencia ? `<div class="entrega-info obs-caixa" style="border-color: #dc3545;"><strong>🚫 Problema Conf.:</strong> ${e.problemaConferencia}</div>` : ''}
                     <div class="entrega-actions">${actions}</div>
                 </div>
@@ -1016,6 +1021,7 @@
         
         function carregarConferenciaCaixa() {
             const entregas = obterEntregasFiltradas();
+            // Filtra por status 'aguardando conferencia' E entregas criadas pelo usuário logado
             const aguardandoConferencia = entregas.filter(e => 
                 e.status === 'aguardando conferencia' && e.criadoPor === usuarioLogado
             );
@@ -1041,7 +1047,7 @@
             let comprovante = ``;
             
             if (e.comprovanteEntregador && e.comprovanteEntregador !== 'Não aplicável') {
-                comprovante = `<a href="#" onclick="showMessageBox('Anexo Enviado', 'O entregador marcou o comprovante como enviado. Verifique o anexo físico/digital.')" class="btn-small btn-maps" style="width: 100%;">🖼️ Ver Anexo Entregador</a>`;
+                comprovante = `<a href="${e.comprovanteEntregador}" target="_blank" class="btn-small btn-maps" style="width: 100%;">🖼️ Ver Anexo Entregador</a>`;
             } else {
                 comprovante = `<div class="conferencia-detail">Comprovante: Não Anexado (Opcional)</div>`;
             }
@@ -1070,13 +1076,13 @@
                     ${problemaRegistrado}
                     
                     <div class="entrega-actions" style="flex-direction: column;">
-                         ${comprovante}
-                         <button class="btn-primary" onclick="confirmarConferencia(${e.id})" ${e.status === 'problema conferencia' ? 'disabled style="opacity: 0.5;"' : ''}>
-                             ✅ Conferido: FECHAR CAIXA
-                         </button>
-                         <button class="btn-voltar btn-remover-user" onclick="abrirModalConferenciaProblema(${e.id})">
-                             ❌ Registrar/Revisar Problema
-                         </button>
+                        ${comprovante}
+                        <button class="btn-primary" onclick="confirmarConferencia(${e.id})" ${e.status === 'problema conferencia' ? 'disabled style="opacity: 0.5;"' : ''}>
+                            ✅ Conferido: FECHAR CAIXA
+                        </button>
+                        <button class="btn-voltar btn-remover-user" onclick="abrirModalConferenciaProblema(${e.id})">
+                            ❌ Registrar/Revisar Problema
+                        </button>
                     </div>
                 </div>
             `;
@@ -1291,7 +1297,7 @@
                 const opt = document.createElement('option');
                 opt.value = nome;
                 opt.textContent = nome;
-                    select.appendChild(opt);
+                     select.appendChild(opt);
             });
             
             atualizarListaEntregadores();
@@ -1455,29 +1461,57 @@
         }
 
         async function finalizarEntregaComAnexo(docId, fotoFile, obs) {
-              let comprovanteUrl = 'Não aplicável';
-              const entrega = todasEntregas.find(e => e.id == docId);
+             let comprovanteUrl = 'Não aplicável';
+             const entrega = todasEntregas.find(e => e.id == docId);
 
-              if (fotoFile) { 
-                  comprovanteUrl = await uploadComprovante(fotoFile, entrega.clienteNome, 'entregador');
-                  if (!comprovanteUrl) return; 
-              }
+             if (fotoFile) { 
+                 comprovanteUrl = await uploadComprovante(fotoFile, entrega.clienteNome, 'entregador');
+                 if (!comprovanteUrl) return; 
+             }
 
-              const updates = {
-                  status: 'entregue', 
-                  finalizadoem: new Date().toISOString(), 
-                  observacao: obs,
-                  comprovanteentregador: comprovanteUrl 
-              };
-              
-              if (await atualizarEntrega(docId, updates)) {
-                  showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso!');
-              }
-         }
+             const updates = {
+                 status: 'aguardando conferencia', // <--- CORREÇÃO: Mudar para 'aguardando conferencia'
+                 finalizadoem: new Date().toISOString(), 
+                 observacao: obs,
+                 comprovanteentregador: comprovanteUrl 
+             };
+             
+             if (await atualizarEntrega(docId, updates)) {
+                 showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso e enviada para conferência!');
+                 setupSupabaseListener(); // FORÇA ATUALIZAÇÃO IMEDIATA
+             }
+        }
 
         function fecharModal() {
             const modalDetalhes = document.getElementById('modalDetalhes');
             if (modalDetalhes) modalDetalhes.classList.remove('active');
+        }
+
+        function abrirModalCancelamento(docId, tipo) {
+            acaoCancelamentoDocId = docId;
+            acaoCancelamentoTipo = tipo;
+            
+            const modalCancelTitle = document.getElementById('modalCancelTitle');
+            const btnConfirmar = document.querySelector('#modalCancelamento .modal-btn.danger');
+
+            if (tipo === 'cancelada') {
+                if (modalCancelTitle) modalCancelTitle.textContent = '❌ Cancelar Entrega (Caixa)';
+                if (btnConfirmar) {
+                    btnConfirmar.textContent = 'Confirmar Cancelamento';
+                    btnConfirmar.classList.add('danger');
+                    btnConfirmar.classList.remove('btn-falha');
+                }
+            } else if (tipo === 'falha') {
+                if (modalCancelTitle) modalCancelTitle.textContent = '⚠️ Registrar Falha na Entrega (Entregador)';
+                if (btnConfirmar) {
+                    btnConfirmar.textContent = 'Registrar Falha';
+                    btnConfirmar.classList.remove('danger');
+                    btnConfirmar.classList.add('btn-falha');
+                }
+            }
+
+            const modalCancelamento = document.getElementById('modalCancelamento');
+            if (modalCancelamento) modalCancelamento.classList.add('active');
         }
 
         function fecharModalCancelamento() {
@@ -1509,15 +1543,20 @@
             if (tipo === 'cancelada') {
                  updates.motivocancelamento = motivo;
                  updates.canceladopor = usuarioLogado;
+                 updates.entregador = updates.entregador || 'N/A';
                  sucessoMsg = `Entrega CANCELADA com sucesso! Motivo: ${motivo}`;
             } else if (tipo === 'falha') {
                  updates.motivofalha = motivo;
+                 updates.entregador = updates.entregador || usuarioLogado;
+                 updates.saiuem = updates.saiuem || new Date().toISOString();
+                 updates.criadopor = updates.criadopor || usuarioLogado;
                  sucessoMsg = `Falha registrada com sucesso! Motivo: ${motivo}`;
             }
             
             if (await atualizarEntrega(docId, updates)) {
                 showMessageBox('✅ Sucesso', sucessoMsg);
                 fecharModalCancelamento();
+                setupSupabaseListener(); // FORÇA ATUALIZAÇÃO APÓS CANCELAMENTO/FALHA
             }
         }
 
@@ -1528,12 +1567,14 @@
                 const updates = {
                     status: 'fechada',
                     conferidopor: usuarioLogado,
-                    conferidoem: new Date().toISOString()
+                    conferidoem: new Date().toISOString(),
+                    problemaconferencia: null // Limpa qualquer problema anterior
                 };
                 
                 if (await atualizarEntrega(id, updates)) {
                     showMessageBox('✅ Sucesso', 'Conferência confirmada com sucesso!');
-                    carregarConferenciaCaixa();
+                    // REMOVIDO: carregarConferenciaCaixa(); // Deixa o listener fazer isso
+                    setupSupabaseListener(); // FORÇA ATUALIZAÇÃO APÓS FECHAMENTO
                 }
             });
         }
@@ -1568,61 +1609,14 @@
             if (await atualizarEntrega(conferenciaProblemaDocId, updates)) {
                 showMessageBox('✅ Sucesso', 'Problema registrado com sucesso!');
                 fecharModalConferenciaProblema();
-                carregarConferenciaCaixa();
+                // REMOVIDO: carregarConferenciaCaixa(); // Deixa o listener fazer isso
+                setupSupabaseListener(); // FORÇA ATUALIZAÇÃO APÓS REGISTRO DE PROBLEMA
             }
         }
 
         // --- FUNÇÕES DE CRIAÇÃO DE CARDS ---
         
-        function criarCardEntrega(entrega, tipo, isNext = false) {
-            let statusClass = `status-${entrega.status.replace(/\s/g, '').toLowerCase()}`;
-            let statusText = entrega.status.toUpperCase();
-            
-            let badges = '';
-            if (entrega.geladeira === 'Sim') badges += `<span class="geladeira-badge">❄️ GELADEIRA</span>`;
-            if (entrega.jaPago === 'SIM') badges += `<span class="pago-badge">✅ PAGO (${entrega.pagamento})</span>`;
-            if (entrega.jaPago === 'NÃO') badges += `<span class="cobrar-badge">💰 COBRAR ${entrega.valorACobrar || entrega.valor}</span>`;
-            if (entrega.troco && entrega.troco !== 'Não') badges += `<span class="troco-badge">💵 TROCO: ${entrega.troco}</span>`;
-            if (entrega.urgente === 'Sim') badges += `<span class="urgent-badge">🚨 URGENTE</span>`;
-
-            let actions = '';
-            const id = entrega.id;
-
-            if (tipo === 'pendente' && tipoUsuario === 'entregador') {
-                actions = `<button class="btn-small btn-pegar" onclick="pegarEntrega('${id}')">Pegar Entrega</button>`;
-            } else if (tipo === 'emrota' && entrega.entregador === usuarioLogado && tipoUsuario === 'entregador') {
-                actions = `
-                    <button class="btn-small btn-maps" onclick="copiarEndereco('${entrega.endereco}', '${entrega.bairro}')">🗺️ Copiar Endereço</button>
-                    <button class="btn-small btn-verde" onclick="abrirModalAnexo('${id}')">📸 Anexar Comprovante</button>
-                    <button class="btn-small btn-entregar" onclick="finalizarEntrega('${id}')">Entregue</button>
-                    <button class="btn-small btn-falha" onclick="falhaEntregaAcao('${id}')">Falha</button>
-                `;
-            }
-            
-            actions += `<button class="btn-small btn-ver" onclick="mostrarDetalhes('${id}')">Ver Detalhes</button>`;
-
-            const entregadorInfo = entrega.entregador ? 
-                `<div class="entrega-info"><strong>Entregador:</strong> ${entrega.entregador}</div>` : '';
-            
-            const cardClass = isNext ? 'next-delivery-card' : '';
-            const tempoEmRota = entrega.saiuEm ? formatTimeDuration(entrega.saiuEm) : '';
-
-            return `
-                <div class="entrega-card ${cardClass}">
-                    <div class="entrega-header">
-                        <span class="entrega-nome">${entrega.displayId || entrega.id} - ${entrega.clienteNome}</span>
-                        <span class="status-badge ${statusClass}">${statusText}</span>
-                    </div>
-                    <div class="entrega-info"><strong>Endereço:</strong> ${entrega.endereco}</div>
-                    <div class="entrega-info"><strong>Bairro:</strong> ${entrega.bairro}</div>
-                    <div class="entrega-info"><strong>Valor:</strong> ${entrega.valorACobrar || entrega.valor} (${entrega.pagamento}) | Caixa: ${entrega.caixa}</div>
-                    ${entregadorInfo}
-                    ${tempoEmRota ? `<div class="entrega-info"><strong>Tempo em rota:</strong> ${tempoEmRota}</div>` : ''}
-                    <div class="entrega-info" style="margin-top: 8px;">${badges}</div>
-                    <div class="entrega-actions">${actions}</div>
-                </div>
-            `;
-        }
+        // Mantida a versão original, mas as demais chamadas foram refeitas para usar a versão mais nova.
 
         function mostrarDetalhes(docId) {
              const entrega = todasEntregas.find(e => e.id == docId);
@@ -1645,6 +1639,7 @@
                  <p><strong>Troco Necessário:</strong> ${entrega.troco}</p>
                  <p><strong>Recibo/NFe:</strong> ${entrega.recibo}</p>
                  <p><strong>Caixa/Origem:</strong> ${entrega.caixa} (Operador: ${entrega.operadorCaixa})</p>
+                 <p><strong>Observação Caixa:</strong> ${entrega.observacaoCaixa || 'N/A'}</p>
                  <hr style="margin: 15px 0;">
                  <h4>Timeline</h4>
                  <p><strong>Criada em:</strong> ${formatSupabaseDate(entrega.created_at)}</p>
@@ -1659,24 +1654,24 @@
              }
 
              if (entrega.comprovante && entrega.comprovante.startsWith('http')) {
-                 content += `
-                     <h4>📸 Comprovante do Caixa (Antecipado)</h4>
-                     <img src="${entrega.comprovante}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
-                 `;
+                  content += `
+                      <h4>📸 Comprovante do Caixa (Antecipado)</h4>
+                      <img src="${entrega.comprovante}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
+                  `;
              }
              
              if (entrega.comprovanteEntregador && entrega.comprovanteEntregador.startsWith('http')) {
-                 content += `
-                     <h4>📸 Comprovante do Entregador</h4>
-                     <img src="${entrega.comprovanteEntregador}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
-                 `;
+                  content += `
+                      <h4>📸 Comprovante do Entregador</h4>
+                      <img src="${entrega.comprovanteEntregador}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;">
+                  `;
              }
 
              const modalConteudo = document.getElementById('modalConteudo');
              if (modalConteudo) modalConteudo.innerHTML = content;
              const modalDetalhes = document.getElementById('modalDetalhes');
              if (modalDetalhes) modalDetalhes.classList.add('active');
-         }
+           }
 
         function falhaEntregaAcao(docId) {
             acaoCancelamentoDocId = docId;
@@ -1699,22 +1694,25 @@
             const modalCancelamento = document.getElementById('modalCancelamento');
             if (modalCancelamento) modalCancelamento.classList.add('active');
         }
-
+        
+        // Funções anteriores de finalização foram unidas e corrigidas
         function finalizarEntrega(docId) {
              const entrega = todasEntregas.find(e => e.id == docId);
              if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
 
-             if (entrega.jaPago === 'NÃO') {
-                 showConfirmBox('🚨 Cobrança Pendente', `Confirma que o valor ${entrega.valorACobrar || entrega.valor} foi cobrado do cliente?`, () => {
-                     continuarFinalizarEntrega(docId, entrega);
-                 });
-                 return; 
+             // Se for necessário cobrar, pede confirmação
+             if (entrega.jaPago === 'NÃO' && entrega.pagamento === 'Dinheiro') {
+                  showConfirmBox('🚨 Cobrança Pendente', `Confirma que o valor ${entrega.valorACobrar || entrega.valor} foi cobrado do cliente?`, () => {
+                      continuarFinalizarEntrega(docId, entrega);
+                  });
+                  return; 
              }
              
              continuarFinalizarEntrega(docId, entrega);
         }
         
         async function continuarFinalizarEntrega(docId, entrega) {
+             // Se for Pix ou Cartão, abre o modal de anexo (ponto de entrada unificado)
              if (entrega.pagamento === 'Pix' || entrega.pagamento === 'Cartão') {
                  window.entregaParaFinalizarId = docId; 
                  const anexoInputEntregador = document.getElementById('anexoInputEntregador');
@@ -1727,35 +1725,21 @@
                  return; 
              }
 
-             const obs = window.prompt('Observação da entrega (ex: Entregue ao vizinho, Deixado na caixa de correio). (Opcional):');
+             // Se for Dinheiro (e já foi confirmado na tela anterior, ou se foi pago antecipado), finaliza sem anexo
+             // NOTA: 'prompt' é usado para fins de teste no Canvas, mas deve ser substituído por um modal/input customizado em produção.
+             const obs = prompt('Observação da entrega (ex: Entregue ao vizinho, Deixado na caixa de correio). (Opcional):');
              
              const updates = {
-                 status: 'entregue', 
+                 status: 'aguardando conferencia', // <--- CORREÇÃO: Mudar para 'aguardando conferencia'
                  finalizadoem: new Date().toISOString(),
                  observacao: obs,
                  comprovanteentregador: 'Não aplicável'
              };
 
              if (await atualizarEntrega(docId, updates)) {
-                 showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso!');
+                 showMessageBox('✅ Sucesso', 'Entrega finalizada com sucesso e enviada para conferência!');
+                 setupSupabaseListener(); // FORÇA ATUALIZAÇÃO IMEDIATA
              }
-        }
-
-        async function atualizarEntrega(docId, updates) {
-            if (!window.supabaseClient) return false;
-            try {
-                const { error } = await window.supabaseClient
-                    .from(SUPABASE_TABLE)
-                    .update(updates)
-                    .eq('id', docId);
-                
-                if (error) throw error;
-                return true; 
-            } catch (error) {
-                console.error("Erro ao atualizar entrega:", error);
-                showMessageBox('❌ Erro', `Erro ao atualizar entrega: ${error.message}`);
-                return false;
-            }
         }
         
     </script>
@@ -2454,7 +2438,7 @@
                              <label>Nome do Atendente/Caixa *</label>
                              <select id="atendenteNome"></select>
                          </div>
-                        <div class="form-group">
+                         <div class="form-group">
                              <label>Senha *</label>
                              <input type="password" id="atendenteSenha" placeholder="Digite sua senha">
                          </div>
@@ -2556,8 +2540,8 @@
                              <label>Taxa de Entrega (Automática)</label>
                              <input type="text" id="taxaEntregaDisplay" readonly disabled style="background: #f0f0f0; font-weight: bold; color: #3d4b7a;">
                              <div class="checkbox-group">
-                                <input type="checkbox" id="isentarTaxa">
-                                <label for="isentarTaxa" style="margin-bottom: 0; font-weight: normal;">❌ Isentar Taxa de Entrega (Gratuidade)</label>
+                                 <input type="checkbox" id="isentarTaxa">
+                                 <label for="isentarTaxa" style="margin-bottom: 0; font-weight: normal;">❌ Isentar Taxa de Entrega (Gratuidade)</label>
                              </div>
                         </div>
 
@@ -2802,7 +2786,7 @@
             </div>
             <div class="modal-buttons">
                 <button class="modal-btn secondary" onclick="fecharModalCancelamento()">↩️ Cancelar</button>
-                <button class="modal-btn danger" onclick="confirmarModalCancelamento()">Confirmar</button>
+                <button class="modal-btn danger" id="btnConfirmarCancelamento" onclick="confirmarModalCancelamento()">Confirmar</button>
             </div>
         </div>
     </div>
@@ -2817,7 +2801,7 @@
     <div id="modalAnexo" class="detalhes-modal">
         <div class="detalhes-content">
             <h3 style="color: #3d4b7a;">📸 Anexar Comprovante (Max: 5MB)</h3>
-            <p id="anexoMensagem" style="margin-bottom: 15px; color: #3d4b7a; font-weight: bold;">Anexo opcional para prova de entrega ou observação visual.</p>
+            <p id="anexoMensagem" style="margin-bottom: 15px; color: #3d4b7a; font-weight: bold;">Anexo obrigatório para Pix/Cartão e opcional para observação visual.</p>
             
             <input type="file" id="anexoInputEntregador" accept="image/jpeg" capture="environment">
             
