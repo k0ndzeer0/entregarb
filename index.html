@@ -863,7 +863,6 @@
             }
         }
 
-        // FUNÇÃO DE CARREGAMENTO DAS ENTREGAS DO ENTREGADOR (CORRIGIDA)
         function carregarEntregasEntregador() {
             const entregas = obterEntregasFiltradas();
             const pendentes = entregas.filter(e => e.status === 'pendente');
@@ -886,7 +885,7 @@
             if (pendentes.length === 0) {
                 listaPendentes.innerHTML = '<div class="empty-state"><p>Nenhuma entrega disponível no momento.</p></div>';
             } else {
-                // *** CORREÇÃO: Usando criarCardEntrega (Formato de Card) ***
+                // ALTERADO PARA USAR O CARD COMPLETO
                 listaPendentes.innerHTML = pendentes.map(e => criarCardEntrega(e, 'pendente')).join('');
             }
             
@@ -894,7 +893,7 @@
             if (emRota.length === 0) {
                 listaEmRota.innerHTML = '<div class="empty-state"><p>Você não possui entregas em rota.</p></div>';
             } else {
-                // *** CORREÇÃO: Usando criarCardEntrega (Formato de Card) ***
+                 // ALTERADO PARA USAR O CARD COMPLETO
                 listaEmRota.innerHTML = emRota.map((e, index) => criarCardEntrega(e, 'emrota', index === 0)).join(''); 
             }
             
@@ -902,7 +901,7 @@
             if (entreguesConferidas.length === 0) {
                 listaEntregues.innerHTML = '<div class="empty-state"><p>Nenhuma entrega finalizada hoje.</p></div>';
             } else {
-                // *** CORREÇÃO: Usando criarCardEntrega (Formato de Card) ***
+                // ALTERADO PARA USAR O CARD COMPLETO
                 listaEntregues.innerHTML = entreguesConferidas.map(e => criarCardEntrega(e, 'entregue')).join('');
             }
         }
@@ -999,99 +998,42 @@
             `;
         }
 
-        // REMOVIDO: A função criarCardEntregaCompacto não é mais usada na tela do entregador, mas é mantida aqui para referência e caso seja usada em outras telas.
-        function criarCardEntregaCompacto(e, tipo, isNext = false) {
+        // FUNÇÃO DE CRIAÇÃO DE LINHA/LISTA SIMPLES PARA O PAINEL FISCAL
+        function criarLinhaEntregaFiscal(e) {
             const statusClass = `status-${e.status.replace(' ', '')}`;
             const statusLabel = {
                 'pendente': 'Pendente',
                 'em rota': 'Em Rota',
-                'aguardando conferencia': 'Aguardando Conf.', 
-                'problema conferencia': 'Problema Conf.', 
-                'fechada': 'Fechada (OK)', 
+                'aguardando conferencia': 'AGUARDANDO CONF.', 
+                'problema conferencia': 'PROBLEMA NA CONF.', 
+                'fechada': 'FECHADA (OK)', 
                 'cancelada': 'Cancelada',
                 'falha': 'Falha'
             }[e.status] || e.status;
             
-            const valorACobrar = e.valorACobrar || e.valor;
-            const urgenteBadge = e.urgente === 'Sim' ? '<span class="urgente-badge">URGENTE</span>' : '';
-            const gelaBadge = e.geladeira === 'Sim' ? '<span class="geladeira-badge">GELADEIRA</span>' : '';
-            
-            let actions = '';
-            if (tipo === 'pendente') {
-                actions = `
-                    <button class="btn-small btn-pegar" onclick="pegarEntrega(${e.id})">Pegar</button>
-                    <button class="btn-small btn-maps" onclick="copiarEndereco('${e.endereco}', '${e.bairro}')">Endereço</button>
-                `;
-            } else if (tipo === 'emrota') {
-                actions = `
-                    <button class="btn-small btn-entregar" onclick="abrirModalAnexo(${e.id})">Entregar</button>
-                    <button class="btn-small btn-falha" onclick="abrirModalCancelamento(${e.id}, 'falha')">Falha</button>
-                `;
-            } else if (tipo === 'entregue' && e.status === 'aguardando conferencia') {
-                actions = `<div style="color: #d63031; font-weight: bold; font-size: 12px;">AGUARDE CONFERÊNCIA</div>`;
-            }
+            const urgenteBadge = e.urgente === 'Sim' ? '<span class="urgente-badge" style="font-size: 10px; margin-left: 5px;">URGENTE</span>' : '';
+            const valorDisplay = e.valorACobrar || e.valor;
+            const isCobrar = e.jaPago === 'NÃO';
 
+            // A linha inteira é clicável para mostrar os detalhes
             return `
-                <div class="entrega-item ${e.urgente === 'Sim' ? 'urgent-card' : ''} ${e.status === 'problema conferencia' ? 'problem-card' : ''}" id="entrega-${e.id}" onclick="toggleEntregaDetails(${e.id})">
-                    <div class="entrega-summary">
-                        <div class="entrega-main-info">
-                            <div class="entrega-id">${e.displayId}</div>
-                            <div class="entrega-cliente">${e.clienteNome} ${urgenteBadge}</div>
-                            <div class="entrega-endereco">${e.endereco}, ${e.bairro}</div>
+                <div class="entrega-list-item" onclick="mostrarDetalhes(${e.id})">
+                    <div class="item-main-info">
+                        <div class="item-id-nome">
+                            <strong>${e.displayId}</strong> - ${e.clienteNome} ${urgenteBadge}
                         </div>
-                        <div class="entrega-valor">${valorACobrar}</div>
-                        <div class="entrega-status">
-                            <span class="status-badge ${statusClass}">${statusLabel}</span>
-                            <span class="expand-icon">▼</span>
-                        </div>
+                        <div class="item-endereco">${e.endereco}, ${e.bairro}</div>
                     </div>
-                    <div class="entrega-details">
-                        <div class="entrega-details-content">
-                            <div class="detail-row">
-                                <span class="detail-icon">📞</span>
-                                <span class="detail-label">Telefone:</span>
-                                <span class="detail-value">${formatarTelefone(e.telefone)}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-icon">💳</span>
-                                <span class="detail-label">Pagamento:</span>
-                                <span class="detail-value">${e.pagamento || 'Não informado'} ${gelaBadge}</span>
-                            </div>
-                            ${e.jaPago === 'SIM' ? `
-                                <div class="detail-row">
-                                    <span class="detail-icon">✅</span>
-                                    <span class="detail-label">Status:</span>
-                                    <span class="detail-value" style="color: #28a745;">Pago Antecipado</span>
-                                </div>
-                            ` : `
-                                <div class="detail-row">
-                                    <span class="detail-icon">💰</span>
-                                    <span class="detail-label">Cobrança:</span>
-                                    <span class="detail-value" style="color: #d63031;">Cobrar na Entrega</span>
-                                </div>
-                            `}
-                            ${e.observacaoCaixa ? `
-                                <div class="detail-row">
-                                    <span class="detail-icon">📢</span>
-                                    <span class="detail-label">Obs. Caixa:</span>
-                                    <span class="detail-value">${e.observacaoCaixa}</span>
-                                </div>
-                            ` : ''}
-                            ${e.problemaConferencia ? `
-                                <div class="detail-row">
-                                    <span class="detail-icon">🚫</span>
-                                    <span class="detail-label">Problema:</span>
-                                    <span class="detail-value" style="color: #dc3545;">${e.problemaConferencia}</span>
-                                </div>
-                            ` : ''}
-                            <div class="entrega-actions" style="margin-top: 15px;">
-                                ${actions}
-                            </div>
+                    <div class="item-financial-status">
+                        <div class="item-valor" style="color: ${isCobrar ? '#d63031' : '#28a745'};">
+                            ${valorDisplay}
                         </div>
+                        <span class="status-badge ${statusClass}">${statusLabel}</span>
                     </div>
                 </div>
             `;
         }
+
 
         // CORREÇÃO: Definindo a função pegarEntrega no escopo global para que o HTML a encontre
         function pegarEntrega(docId) {
@@ -1185,6 +1127,54 @@
             `;
         }
 
+        // --- FUNÇÕES NOVAS PARA AGRUPAMENTO NA TELA FISCAL ---
+        
+        function agruparEntregasPorData(entregas) {
+            const agrupadas = {};
+            
+            // As entregas já estão ordenadas por created_at (mais novas primeiro)
+            entregas.forEach(e => {
+                // Usa a data formatada (DD/MM/AAAA) como chave de agrupamento
+                const dataCriacao = new Date(e.created_at).toLocaleDateString('pt-BR'); 
+                
+                if (!agrupadas[dataCriacao]) {
+                    agrupadas[dataCriacao] = [];
+                }
+                agrupadas[dataCriacao].push(e);
+            });
+            
+            return agrupadas;
+        }
+
+        function renderizarHistoricoAgrupado(entregasAgrupadas) {
+            let html = '';
+            
+            // Pega as chaves (datas) e as ordena para garantir que a data mais recente venha primeiro
+            const datasOrdenadas = Object.keys(entregasAgrupadas).sort((a, b) => {
+                // Converte DD/MM/AAAA para um formato comparável YYYYMMDD
+                const dateA = a.split('/').reverse().join('');
+                const dateB = b.split('/').reverse().join('');
+                return dateB - dateA; // Ordem decrescente (mais recente primeiro)
+            });
+
+            datasOrdenadas.forEach(data => {
+                html += `
+                    <div class="date-group-header">
+                        <h3>🗓️ Entregas de ${data}</h3>
+                        <span class="count-badge">${entregasAgrupadas[data].length} Entregas</span>
+                    </div>
+                `;
+                
+                // Renderiza as novas linhas/listas para cada entrega daquela data
+                entregasAgrupadas[data].forEach(entrega => {
+                    html += criarLinhaEntregaFiscal(entrega);
+                });
+            });
+            
+            return html;
+        }
+
+        // --- FUNÇÃO PRINCIPAL DA TELA FISCAL (ATUALIZADA) ---
 
         function carregarDashboardFiscal() {
             const entregas = obterEntregasFiltradas();
@@ -1209,65 +1199,16 @@
             if (entregas.length === 0) {
                 listaCompleta.innerHTML = '<div class="empty-state"><p>Nenhuma entrega no período selecionado.</p></div>';
             } else {
-                listaCompleta.innerHTML = entregas.map(e => criarCardEntregaFiscal(e)).join('');
+                // CHAVE: Agrupa as entregas e renderiza o histórico
+                const entregasAgrupadas = agruparEntregasPorData(entregas);
+                listaCompleta.innerHTML = renderizarHistoricoAgrupado(entregasAgrupadas);
             }
         }
         
-        function criarCardEntregaFiscal(e) {
-            const statusClass = `status-${e.status.replace(' ', '')}`;
-            const statusLabel = {
-                'pendente': 'Pendente',
-                'em rota': 'Em Rota',
-                'aguardando conferencia': 'AGUARDANDO CONF.', 
-                'problema conferencia': 'PROBLEMA NA CONF.', 
-                'fechada': 'FECHADA (OK)', 
-                'entregue': 'Entregue (Antigo)', 
-                'cancelada': 'Cancelada',
-                'falha': 'Falha'
-            }[e.status] || e.status;
-            
-            let actions = '';
-            if (e.status === 'pendente') {
-                actions = `<button class="btn-small btn-cancelar" onclick="abrirModalCancelamento(${e.id}, 'cancelada')">❌ Cancelar</button>`;
-            }
-            // NOVO: Adicionado display de conferidoPor se a entrega for FECHADA
-            let conferidoDisplay = '';
-            if (e.status === 'fechada' && e.conferidoPor) {
-                 conferidoDisplay = `<div class="entrega-info" style="color: #28a745;"><strong>✅ Conferido Por:</strong> ${e.conferidoPor}</div>`;
-            } else if (e.status === 'aguardando conferencia' || e.status === 'problema conferencia') {
-                 actions += `<button class="btn-small btn-maps" style="background: #ffc107;" onclick="showMessageBox('Atenção', 'Entregas pendentes de conferência devem ser validadas pelo Caixa responsávl: ${e.criadoPor}.')">🔍 Ver Conferência</button>`;
-            }
-            
-            if (e.comprovanteEntregador && e.comprovanteEntregador !== 'Não aplicável') {
-                 actions += `<a class="btn-small btn-maps" style="background: #3d4b7a;" href="${e.comprovanteEntregador}" target="_blank">🖼️ Ver Comprovante</a>`;
-            }
-
-            const pagoBadge = e.jaPago === 'SIM' ? '<span class="pago-badge">✅ JÁ PAGO</span>' : '<span class="cobrar-badge">💰 COBRAR</span>';
-            const entregadorInfo = e.entregador ? `<div class="entrega-info"><strong>🚴 Entregador:</strong> ${e.entregador}</div>` : '';
-            const urgenteBadge = e.urgente === 'Sim' ? '<span class="urgente-badge">⚠️ URGENTE</span>' : '';
-            const taxaInfo = e.taxaEntregaNumerica > 0 ? ` (+ Taxa: ${e.taxaEntrega})` : '';
-
-            return `
-                <div class="entrega-card ${e.urgente === 'Sim' ? 'urgent-card' : ''} ${e.status === 'problema conferencia' ? 'problem-card' : ''}">
-                    <div class="entrega-header">
-                        <div class="entrega-nome">${e.displayId} - ${e.clienteNome} ${urgenteBadge}</div>
-                        <span class="status-badge ${statusClass}">${statusLabel}</span>
-                    </div>
-                    <div class="entrega-info"><strong>📍 Endereço:</strong> ${e.endereco}, ${e.bairro}</div>
-                    <div class="entrega-info"><strong>💰 Valor Pedido:</strong> ${e.valor} ${taxaInfo}</div>
-                    <div class="entrega-info"><strong>💰 VALOR FINAL:</strong> ${e.valorACobrar} ${pagoBadge}</div>
-                    <div class="entrega-info"><strong>🏪 Caixa:</strong> ${e.caixa || 'N/A'}</div>
-                    <div class="entrega-info"><strong>👤 Operador:</strong> ${e.operadorCaixa || 'N/A'}</div>
-                    ${e.observacaoCaixa ? `<div class="entrega-info obs-caixa"><strong>📢 Obs. Caixa:</strong> ${e.observacaoCaixa}</div>` : ''}
-                    ${e.problemaConferencia ? `<div class="entrega-info obs-caixa" style="border-color: #dc3545;"><strong>🚫 Problema Conf.:</strong> ${e.problemaConferencia}</div>` : ''}
-                    ${entregadorInfo}
-                    ${conferidoDisplay}
-                    <div class="entrega-info"><strong>📅 Criado:</strong> ${formatSupabaseDate(e.created_at)}</div>
-                    <div class="entrega-actions">${actions}</div>
-                </div>
-            `;
-        }
-
+        // A função criarCardEntregaFiscal foi substituída por criarLinhaEntregaFiscal, mas mantemos o nome original 
+        // para evitar quebras em outras partes, caso fossem referenciadas. Para o código atual, ela foi removida
+        // e substituída pela nova função de linha simples no código acima.
+        
         function renderizarGrafico(entregas) {
             const statusCount = {
                 'pendente': entregas.filter(e => e.status === 'pendente').length,
@@ -2042,6 +1983,113 @@
             background: var(--border-color) !important;
             color: #ffffff !important;
         }
+        
+        /* NOVO: Estilos do Agrupamento por Data */
+        .date-group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f0f0f0; /* Cor de fundo secundária para destaque */
+            border-top: 3px solid var(--button-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 15px;
+            margin: 20px 0 10px;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .date-group-header h3 {
+            margin: 0;
+            font-size: 18px;
+            color: var(--button-bg); /* Cor principal do app */
+        }
+        
+        .date-group-header .count-badge {
+            background: #6c757d;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        [data-theme="dark"] .date-group-header {
+             background: #374151; /* Cor de fundo mais escura no modo dark */
+        }
+        
+        [data-theme="dark"] .date-group-header h3 {
+             color: #ffffff !important;
+        }
+
+        /* Estilo da nova Lista Fiscal Simples */
+        .entrega-list-item {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .entrega-list-item:hover {
+            background-color: #f8f8f8;
+            border-color: var(--button-bg);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        [data-theme="dark"] .entrega-list-item:hover {
+             background-color: #374151;
+        }
+
+        .item-main-info {
+            flex: 1;
+            padding-right: 10px;
+        }
+
+        .item-id-nome {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 3px;
+        }
+
+        .item-id-nome strong {
+             font-weight: bold;
+             color: var(--text-primary);
+        }
+
+        .item-endereco {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .item-financial-status {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            min-width: 100px;
+        }
+
+        .item-valor {
+            font-weight: bold;
+            font-size: 15px;
+            margin-bottom: 3px;
+        }
+
+        /* Mantém o estilo do badge de status existente */
+        .item-financial-status .status-badge {
+            font-size: 8px;
+            padding: 2px 6px;
+        }
+        
+        /* Remove o estilo antigo do card fiscal */
+        /* Deixamos o display: flex aqui para garantir que o item-list seja exibido */
+        #listaTodasEntregas .entrega-card { 
+            display: none; 
+        }
 
         * {
             margin: 0;
@@ -2329,7 +2377,7 @@
             flex-wrap: wrap;
         }
 
-        /* NOVO: Estilo para lista compacta de entregas */
+        /* NOVO: Estilo para lista compacta de entregas (ENTREGADOR, MANTIDO PARA CONFERÊNCIA) */
         .entrega-item {
             background: var(--card-bg);
             border: 1px solid var(--border-color);
