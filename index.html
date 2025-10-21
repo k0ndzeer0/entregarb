@@ -255,27 +255,25 @@
         function obterEntregasFiltradas() {
             let entregasFiltradas = todasEntregas.slice(); 
             
-            const dataInicialStr = document.getElementById('dataInicial') ? document.getElementById('dataInicial').value : null;
-            const dataFinalStr = document.getElementById('dataFinal') ? document.getElementById('dataFinal').value : null;
+            // APLICA FILTRO DE DATA APENAS PARA O GESTOR/FISCAL
+            if (tipoUsuario === 'fiscal') {
+                const dataInicialStr = document.getElementById('dataInicial') ? document.getElementById('dataInicial').value : null;
+                const dataFinalStr = document.getElementById('dataFinal') ? document.getElementById('dataFinal').value : null;
 
-            if (dataInicialStr || dataFinalStr) {
-                const dataInicio = dataInicialStr ? new Date(dataInicialStr + 'T00:00:00') : null;
-                const dataFim = dataFinalStr ? new Date(dataFinalStr + 'T23:59:59') : null;
+                if (dataInicialStr || dataFinalStr) {
+                    const dataInicio = dataInicialStr ? new Date(dataInicialStr + 'T00:00:00') : null;
+                    const dataFim = dataFinalStr ? new Date(dataFinalStr + 'T23:59:59') : null;
 
-                entregasFiltradas = entregasFiltradas.filter(e => {
-                    const dataEntrega = new Date(e.created_at);
-                    const isAposInicio = dataInicio ? dataEntrega >= dataInicio : true;
-                    const isAntesFim = dataFim ? dataEntrega <= dataFim : true;
-                    return isAposInicio && isAntesFim;
-                });
-            }
-            
-            if (tipoUsuario === 'entregador') {
-                const hoje = new Date().toLocaleDateString('pt-BR');
-                // Filtra apenas as entregas criadas hoje para o painel do entregador
-                entregasFiltradas = entregasFiltradas.filter(e => new Date(e.created_at).toLocaleDateString('pt-BR') === hoje); 
-            }
-            
+                    entregasFiltradas = entregasFiltradas.filter(e => {
+                        const dataEntrega = new Date(e.created_at);
+                        const isAposInicio = dataInicio ? dataEntrega >= dataInicio : true;
+                        const isAntesFim = dataFim ? dataEntrega <= dataFim : true;
+                        return isAposInicio && isAntesFim;
+                    });
+                }
+            } 
+            // ENTREGADOR: NENHUM FILTRO DE DATA APLICADO AQUI (A filtragem de quem vê o que é feita em carregarEntregasEntregador)
+
             return entregasFiltradas.sort((a, b) => {
                 if (a.urgente === 'Sim' && b.urgente === 'Não') return -1;
                 if (a.urgente === 'Não' && b.urgente === 'Sim') return 1;
@@ -361,13 +359,30 @@
         } else {
             window.initApp();
         }
+        
+        // NOVO: Função para configurar o filtro de data para o dia atual (Padrão)
+        function configurarFiltroPadrao() {
+            const hojeISO = new Date().toISOString().substring(0, 10); // Formato YYYY-MM-DD
+            
+            const dataInicialInput = document.getElementById('dataInicial');
+            const dataFinalInput = document.getElementById('dataFinal');
+
+            // Define o filtro para 'Hoje' apenas se não houver um valor pré-existente
+            if (dataInicialInput && !dataInicialInput.value) {
+                dataInicialInput.value = hojeISO;
+            }
+            if (dataFinalInput && !dataFinalInput.value) {
+                dataFinalInput.value = hojeISO;
+            }
+        }
 
         // Função de inicialização principal
         window.init = function() {
             initializeModalElements();
-            carregarDadosLocais(); // Carrega usuários (LocalStorage)
-            setupSupabaseListener(); // Inicia o carregamento de entregas (Supabase)
-            // ... (Resto da lógica mantida) ...
+            carregarDadosLocais(); 
+            // O filtro padrão só é importante na tela fiscal, mas o chamamos aqui para ter os valores na memória antes do listener
+            configurarFiltroPadrao(); 
+            setupSupabaseListener(); 
             
             const valorTotalInput = document.getElementById('valorTotal');
             const isentarTaxaCheckbox = document.getElementById('isentarTaxa');
@@ -625,7 +640,8 @@
                     problemaConferencia: e.problemaconferencia,
                     motivoCancelamento: e.motivoCancelamento, // Assume que esta chave está ok
                     canceladoPor: e.canceladopor, // CORREÇÃO: Usar chave em minúscula
-                    conferidoPor: e.conferidopor // CORREÇÃO: Usar chave em minúscula
+                    conferidoPor: e.conferidopor, // CORREÇÃO: Usar chave em minúscula
+                    saiuEm: e.saiuem // CORREÇÃO: Garante que a coluna saíuem seja mapeada corretamente
                 })).reverse(); // Inverte para mostrar o mais novo no topo da lista
                 
                 console.log(`[Supabase] Dados de entregas carregados. Total: ${todasEntregas.length}`);
@@ -650,27 +666,25 @@
         function obterEntregasFiltradas() {
             let entregasFiltradas = todasEntregas.slice(); 
             
-            const dataInicialStr = document.getElementById('dataInicial') ? document.getElementById('dataInicial').value : null;
-            const dataFinalStr = document.getElementById('dataFinal') ? document.getElementById('dataFinal').value : null;
+            // APLICA FILTRO DE DATA APENAS PARA O GESTOR/FISCAL
+            if (tipoUsuario === 'fiscal') {
+                const dataInicialStr = document.getElementById('dataInicial') ? document.getElementById('dataInicial').value : null;
+                const dataFinalStr = document.getElementById('dataFinal') ? document.getElementById('dataFinal').value : null;
 
-            if (dataInicialStr || dataFinalStr) {
-                const dataInicio = dataInicialStr ? new Date(dataInicialStr + 'T00:00:00') : null;
-                const dataFim = dataFinalStr ? new Date(dataFinalStr + 'T23:59:59') : null;
+                if (dataInicialStr || dataFinalStr) {
+                    const dataInicio = dataInicialStr ? new Date(dataInicialStr + 'T00:00:00') : null;
+                    const dataFim = dataFinalStr ? new Date(dataFinalStr + 'T23:59:59') : null;
 
-                entregasFiltradas = entregasFiltradas.filter(e => {
-                    const dataEntrega = new Date(e.created_at);
-                    const isAposInicio = dataInicio ? dataEntrega >= dataInicio : true;
-                    const isAntesFim = dataFim ? dataEntrega <= dataFim : true;
-                    return isAposInicio && isAntesFim;
-                });
-            }
-            
-            if (tipoUsuario === 'entregador') {
-                const hoje = new Date().toLocaleDateString('pt-BR');
-                // Filtra apenas as entregas criadas hoje para o painel do entregador
-                entregasFiltradas = entregasFiltradas.filter(e => new Date(e.created_at).toLocaleDateString('pt-BR') === hoje); 
-            }
-            
+                    entregasFiltradas = entregasFiltradas.filter(e => {
+                        const dataEntrega = new Date(e.created_at);
+                        const isAposInicio = dataInicio ? dataEntrega >= dataInicio : true;
+                        const isAntesFim = dataFim ? dataEntrega <= dataFim : true;
+                        return isAposInicio && isAntesFim;
+                    });
+                }
+            } 
+            // ENTREGADOR: NENHUM FILTRO DE DATA APLICADO AQUI (A filtragem de quem vê o que é feita em carregarEntregasEntregador)
+
             return entregasFiltradas.sort((a, b) => {
                 if (a.urgente === 'Sim' && b.urgente === 'Não') return -1;
                 if (a.urgente === 'Não' && b.urgente === 'Sim') return 1;
@@ -680,7 +694,8 @@
             }); 
         }
 
-        function copiarEndereco(endereco, bairro) {
+        // --- COPIAR ENDEREÇO (SUBSTITUI O MAPS) ---
+        window.copiarEndereco = function(endereco, bairro) {
             const enderecoCompleto = `${endereco}, ${bairro}, Garça, SP, Brasil`; 
             
             const tempInput = document.createElement('textarea');
@@ -865,9 +880,13 @@
 
         function carregarEntregasEntregador() {
             const entregas = obterEntregasFiltradas();
+            
+            // Filtra as entregas relevantes para o entregador logado, independente da data
             const pendentes = entregas.filter(e => e.status === 'pendente');
             const emRota = entregas.filter(e => e.entregador === usuarioLogado && e.status === 'em rota');
-            const entreguesConferidas = entregas.filter(e => e.entregador === usuarioLogado && (e.status === 'aguardando conferencia' || e.status === 'fechada' || e.status === 'problema conferencia'));
+            // Histórico de entregas FINALIZADAS hoje (para a seção de Histórico)
+            const hoje = new Date().toLocaleDateString('pt-BR');
+            const entreguesConferidas = entregas.filter(e => e.entregador === usuarioLogado && (e.status === 'aguardando conferencia' || e.status === 'fechada' || e.status === 'problema conferencia') && new Date(e.finalizadoem || e.created_at).toLocaleDateString('pt-BR') === hoje);
             
             document.getElementById('entregasEmRotaCount').textContent = emRota.length;
             
@@ -919,6 +938,12 @@
             }[e.status] || e.status;
             
             let actions = '';
+            // Verificando se a entrega está 'em rota'
+            const isEmRota = tipo === 'emrota';
+            // Verificando se a data de saída JÁ FOI REGISTRADA
+            // CORREÇÃO: Verifica se é uma string não vazia e não é "N/A"
+            const saiuEmRegistrado = e.saiuEm && e.saiuEm.length > 5 && e.saiuEm.toLowerCase() !== 'n/a'; 
+
             if (tipo === 'pendente') {
                 // CORREÇÃO: Torna a função pegarEntrega acessível globalmente
                 window.pegarEntrega = pegarEntrega; 
@@ -927,12 +952,22 @@
                     <button class="btn-small btn-maps" onclick="copiarEndereco('${e.endereco}', '${e.bairro}')">📋 Copiar Endereço</button>
                     ${tipoUsuario === 'atendimento' && e.jaPago === 'NÃO' ? `<button class="btn-small btn-cancelar" onclick="abrirModalCancelamento(${e.id}, 'cancelada')">❌ Cancelar</button>` : ''}
                 `;
-            } else if (tipo === 'emrota') {
-                actions = `
-                    <button class="btn-small btn-entregar" onclick="abrirModalAnexo(${e.id})">✅ Entregar</button>
-                    <button class="btn-small btn-falha" onclick="abrirModalCancelamento(${e.id}, 'falha')">❌ Falha</button>
-                    <button class="btn-small btn-maps" onclick="copiarEndereco('${e.endereco}', '${e.bairro}')">📋 Copiar Endereço</button>
-                `;
+            } else if (isEmRota) {
+                 if (!saiuEmRegistrado) {
+                    // MOSTRA O BOTÃO SAIR
+                    actions = `
+                        <button class="btn-small btn-verde" onclick="registrarSaida(${e.id})">Saiu para Entrega</button>
+                        <button class="btn-small btn-falha" onclick="abrirModalCancelamento(${e.id}, 'falha')">❌ Falha</button>
+                        <button class="btn-small btn-maps" onclick="copiarEndereco('${e.endereco}', '${e.bairro}')">📋 Copiar Endereço</button>
+                    `;
+                 } else {
+                    // MOSTRA O BOTÃO ENTREGUE (Finalizar)
+                    actions = `
+                        <button class="btn-small btn-entregar" onclick="abrirModalAnexo(${e.id})">✅ ENTREGUE</button>
+                        <button class="btn-small btn-falha" onclick="abrirModalCancelamento(${e.id}, 'falha')">❌ Falha</button>
+                        <button class="btn-small btn-maps" onclick="copiarEndereco('${e.endereco}', '${e.bairro}')">📋 Copiar Endereço</button>
+                    `;
+                 }
             } else if (tipo === 'entregue' && e.status === 'aguardando conferencia') {
                  actions = `<div style="color: #d63031; font-weight: bold;">AGUARDE CONFERÊNCIA DO CAIXA</div>`;
             } else if (tipo === 'entregue' && e.status === 'problema conferencia') {
@@ -969,8 +1004,10 @@
             }
             
             let tempoNaRota = '';
-            if (tipo === 'emrota' && e.saiuEm) {
+            if (isEmRota && saiuEmRegistrado) {
                  tempoNaRota = `<div class="entrega-info tempo-rota">⏱️ Tempo na Rota: ${formatTimeDuration(e.saiuEm)}</div>`;
+            } else if (isEmRota && !saiuEmRegistrado) {
+                 tempoNaRota = `<div class="entrega-info tempo-rota" style="color:#d63031;">⏱️ Aguardando registro de saída...</div>`;
             }
             
             // NOVO: Exibir Observação do Caixa para entregadores
@@ -997,7 +1034,7 @@
                 </div>
             `;
         }
-
+        
         // FUNÇÃO DE CRIAÇÃO DE LINHA/LISTA SIMPLES PARA O PAINEL FISCAL
         function criarLinhaEntregaFiscal(e) {
             const statusClass = `status-${e.status.replace(' ', '')}`;
@@ -1034,8 +1071,23 @@
             `;
         }
 
-
-        // CORREÇÃO: Definindo a função pegarEntrega no escopo global para que o HTML a encontre
+        // NOVO: Função para registrar a saída da entrega
+        async function registrarSaida(docId) {
+            showConfirmBox('Confirmação', 'Confirma que a entrega está SAINDO para a rota neste momento?', async () => {
+                const sucesso = await atualizarEntrega(docId, { 
+                    // O status não muda, mas a data de saída é registrada
+                    saiuem: new Date().toISOString() 
+                });
+                
+                if (sucesso) {
+                    showMessageBox('✅ Sucesso', 'Saída registrada. O botão "Entregue" já está disponível!');
+                    // Força a re-renderização para carregar o novo valor 'saiuem' imediatamente
+                    setupSupabaseListener();
+                }
+            });
+        }
+        
+        // CORREÇÃO: Definindo a função pegarEntrega no escopo global e removendo o registro de 'saiuem'
         function pegarEntrega(docId) {
             const entregasHoje = obterEntregasFiltradas();
             const emRotaDoUsuario = entregasHoje.filter(e => e.entregador === usuarioLogado && e.status === 'em rota');
@@ -1048,10 +1100,10 @@
             showConfirmBox('Confirmação', `Deseja realmente pegar esta entrega? Ela será atribuída a ${usuarioLogado}.`, async () => {
                 if (await atualizarEntrega(docId, { 
                     status: 'em rota', 
-                    entregador: usuarioLogado, 
-                    saiuem: new Date().toISOString() 
+                    entregador: usuarioLogado 
+                    // saiuem removido daqui
                 })) {
-                    showMessageBox('✅ Sucesso', 'Entrega atribuída! Boa rota!');
+                    showMessageBox('✅ Sucesso', 'Entrega atribuída! Use o botão "Saiu para Entrega" ao sair para a rota.');
                     // CORREÇÃO: Chama o listener/atualização imediata para mover o item da fila para a rota
                     setupSupabaseListener();
                 }
@@ -1205,9 +1257,7 @@
             }
         }
         
-        // A função criarCardEntregaFiscal foi substituída por criarLinhaEntregaFiscal, mas mantemos o nome original 
-        // para evitar quebras em outras partes, caso fossem referenciadas. Para o código atual, ela foi removida
-        // e substituída pela nova função de linha simples no código acima.
+        // A função criarCardEntregaFiscal (antiga) foi removida e substituída por criarLinhaEntregaFiscal.
         
         function renderizarGrafico(entregas) {
             const statusCount = {
@@ -1654,11 +1704,14 @@
 
         // --- FUNÇÕES DE CRIAÇÃO DE CARDS ---
         
-        // Mantida a versão original, mas as demais chamadas foram refeitas para usar a versão mais nova.
-
+        // CORRIGIDO: Função para exibir detalhes no modal (Timeline Limpa)
         function mostrarDetalhes(docId) {
              const entrega = todasEntregas.find(e => e.id == docId);
              if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
+             
+             // Checa se a propriedade existe e não é 'N/A' (case-insensitive)
+             const hasData = (prop) => entrega[prop] && entrega[prop].toString().toLowerCase() !== 'n/a';
+             const formatIfData = (prop) => hasData(prop) ? formatSupabaseDate(entrega[prop]) : 'N/A';
 
              let content = `
                  <h2 style="color: #d63031;">Detalhes da Entrega ${entrega.displayId || entrega.id}</h2>
@@ -1681,10 +1734,23 @@
                  <hr style="margin: 15px 0;">
                  <h4>Timeline</h4>
                  <p><strong>Criada em:</strong> ${formatSupabaseDate(entrega.created_at)}</p>
-                 <p><strong>Entregador:</strong> ${entrega.entregador || 'Aguardando Atribuição'}</p>
-                 <p><strong>Saiu em:</strong> ${formatSupabaseDate(entrega.saiuEm)}</p>
-                 <p><strong>Finalizada em:</strong> ${formatSupabaseDate(entrega.finalizadoEm)}</p>
-                 <p><strong>Observações (Entregador):</strong> ${entrega.observacao || 'N/A'}</p>
+                 
+                 ${entrega.entregador 
+                    ? `<p><strong>Entregador:</strong> ${entrega.entregador}</p>` 
+                    : `<p><strong>Entregador:</strong> Aguardando Atribuição</p>`}
+                 
+                 ${hasData('saiuEm')
+                    ? `<p><strong>Saiu em:</strong> ${formatSupabaseDate(entrega.saiuEm)}</p>` 
+                    : ``}
+
+                 ${hasData('finalizadoEm')
+                    ? `<p><strong>Finalizada em:</strong> ${formatSupabaseDate(entrega.finalizadoEm)}</p>`
+                    : ``}
+                    
+                 ${hasData('observacao') 
+                    ? `<p><strong>Observações (Entregador):</strong> ${entrega.observacao}</p>` 
+                    : ``}
+                 <hr style="margin: 15px 0;">
              `;
              
              if (entrega.motivoFalha) {
@@ -2086,7 +2152,7 @@
         }
         
         /* Remove o estilo antigo do card fiscal */
-        /* Deixamos o display: flex aqui para garantir que o item-list seja exibido */
+        /* Garante que o formato de card completo não seja exibido na lista fiscal */
         #listaTodasEntregas .entrega-card { 
             display: none; 
         }
