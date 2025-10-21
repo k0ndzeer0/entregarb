@@ -31,7 +31,7 @@
         const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
         const SENHA_RESET = 'RB@ENTREGA'; 
         const ORIGEM_MAPS = 'Supermercado Rio Branco, Garça, SP, Brasil'; 
-        let entregadorEmGestao = null; 
+        let colaboradorEmGestao = null; // RENOMEADO: De entregadorEmGestao para colaboradorEmGestao
         let entregaParaFinalizarId = null; 
         let acaoCancelamentoDocId = null;
         let acaoCancelamentoTipo = null; 
@@ -1375,24 +1375,51 @@
             mostrarTela('screenFiscal');
             carregarDashboardFiscal();
         }
+        
+        // NOVO: Função para obter a lista consolidada de todos os colaboradores
+        function obterTodosColaboradores() {
+             const todos = {};
+             // Adiciona Entregadores
+             Object.entries(ENTREGADORES).forEach(([nome, dados]) => {
+                 todos[nome] = { ...dados, funcoes: (todos[nome] ? todos[nome].funcoes : []).concat('Entregador') };
+             });
+             // Adiciona Atendentes/Caixa
+             Object.entries(ATENDENTES).forEach(([nome, dados]) => {
+                 todos[nome] = { ...dados, funcoes: (todos[nome] ? todos[nome].funcoes : []).concat('Caixa') };
+             });
+             // Adiciona Gestores
+             Object.entries(GESTORES).forEach(([nome, dados]) => {
+                 todos[nome] = { ...dados, funcoes: (todos[nome] ? todos[nome].funcoes : []).concat('Gestor') };
+             });
+             
+             // Remove duplicatas de funções
+             Object.keys(todos).forEach(nome => {
+                 todos[nome].funcoes = [...new Set(todos[nome].funcoes)];
+             });
+             
+             return todos;
+        }
 
         function carregarGestaoAdm() {
             mostrarTela('screenAdmin');
             
-            const select = document.getElementById('entregadorGestaoSelect');
-            select.innerHTML = '<option value="">Selecione um entregador...</option>';
-            Object.keys(ENTREGADORES).forEach(nome => {
+            const todosColaboradores = obterTodosColaboradores();
+            
+            const select = document.getElementById('colaboradorGestaoSelect');
+            select.innerHTML = '<option value="">Selecione um colaborador...</option>';
+            Object.keys(todosColaboradores).forEach(nome => {
                 const opt = document.createElement('option');
                 opt.value = nome;
                 opt.textContent = nome;
-                     select.appendChild(opt);
+                select.appendChild(opt);
             });
             
-            atualizarListaEntregadores();
+            // REMOVIDO: chamada a atualizarListaColaboradores, pois a lista foi excluída
+            // atualizarListaColaboradores(); 
         }
 
         function carregarDetalhesGestao() {
-            const nome = document.getElementById('entregadorGestaoSelect').value;
+            const nome = document.getElementById('colaboradorGestaoSelect').value;
             const card = document.getElementById('gestaoCard');
             
             if (!nome) {
@@ -1400,17 +1427,76 @@
                 return;
             }
             
-            entregadorEmGestao = nome;
-            const dados = ENTREGADORES[nome];
+            colaboradorEmGestao = nome; // Usa o novo nome da variável
+            const todosColaboradores = obterTodosColaboradores();
+            const dados = todosColaboradores[nome] || {};
             
             document.getElementById('colabGestaoNome').textContent = nome;
-            document.getElementById('colabGestaoSenha').textContent = dados.senha;
-            document.getElementById('colabGestaoPontos').textContent = `${dados.pontos} Pts`;
+            // Pega a senha de um dos grupos, pois não é salva em todos
+            const senha = (ENTREGADORES[nome] && ENTREGADORES[nome].senha) || (ATENDENTES[nome] && ATENDENTES[nome].senha) || (GESTORES[nome] && GESTORES[nome].senha) || 'N/A';
+            document.getElementById('colabGestaoSenha').textContent = senha;
+            
+            // Define o valor de pontos se existir (geralmente só existe para Entregadores)
+            const pontos = ENTREGADORES[nome] && ENTREGADORES[nome].pontos !== undefined ? ENTREGADORES[nome].pontos : 'N/A';
+            document.getElementById('colabGestaoPontos').textContent = `${pontos} Pts`;
+            
+            // Define as funções selecionadas
+            const selectFuncao = document.getElementById('colaboradorFuncaoSelect');
+            selectFuncao.querySelectorAll('option').forEach(option => {
+                 option.selected = dados.funcoes.includes(option.value);
+            });
+            
             card.style.display = 'block';
         }
+        
+        // NOVO: Função para atualizar a função do colaborador
+        function atualizarFuncaoColaborador() {
+             if (!colaboradorEmGestao) return;
+             
+             const selectFuncao = document.getElementById('colaboradorFuncaoSelect');
+             const funcoesSelecionadas = Array.from(selectFuncao.selectedOptions).map(option => option.value);
+             
+             showConfirmBox('Confirmação', `Deseja realmente definir as funções de ${colaboradorEmGestao} para: ${funcoesSelecionadas.join(', ')}?`, () => {
+                 
+                 const nome = colaboradorEmGestao;
+                 // 1. Limpa o colaborador de todos os grupos
+                 delete ENTREGADORES[nome];
+                 delete ATENDENTES[nome];
+                 delete GESTORES[nome];
+                 
+                 // 2. Repopula com base nas funções selecionadas, mantendo senha e telefone (se existirem)
+                 // Tenta pegar a senha e telefone de um dos grupos originais
+                 const dadosOriginais = obterTodosColaboradores()[nome];
+                 const senha = dadosOriginais ? dadosOriginais.senha : SENHA_RESET; 
+                 const telefone = dadosOriginais ? dadosOriginais.telefone : '';
+                 const pontos = (ENTREGADORES[nome] && ENTREGADORES[nome].pontos) || 0; // Mantém pontos se estava como entregador
+
+                 if (funcoesSelecionadas.includes('Entregador')) {
+                      ENTREGADORES[nome] = { senha: senha, telefone: telefone, pontos: pontos, historicoPontos: [] };
+                 }
+                 if (funcoesSelecionadas.includes('Caixa')) {
+                      ATENDENTES[nome] = { senha: senha };
+                 }
+                 if (funcoesSelecionadas.includes('Gestor')) {
+                      GESTORES[nome] = { senha: senha };
+                 }
+                 
+                 salvarEntregadores();
+                 // REMOVIDO: chamada a atualizarListaColaboradores, pois a lista foi excluída
+                 // atualizarListaColaboradores();
+                 showMessageBox('✅ Sucesso', `Funções de ${nome} atualizadas.`);
+                 
+                 // Recarrega os detalhes para refletir as mudanças
+                 carregarDetalhesGestao();
+             });
+        }
+
 
         function ajustarPontosEntregador(acao) {
-            if (!entregadorEmGestao) return;
+            if (!colaboradorEmGestao || !ENTREGADORES[colaboradorEmGestao]) { 
+                showMessageBox('⚠️ Erro', 'Selecione um colaborador com a função de Entregador para gerenciar pontos!');
+                return;
+            }
             
             const pontos = prompt(`Quantos pontos deseja ${acao === 'adicionar' ? 'ADICIONAR' : 'REMOVER'}?`);
             if (!pontos || isNaN(pontos) || pontos <= 0) {
@@ -1420,9 +1506,9 @@
             
             const valor = parseInt(pontos);
             if (acao === 'adicionar') {
-                ENTREGADORES[entregadorEmGestao].pontos += valor;
+                ENTREGADORES[colaboradorEmGestao].pontos += valor;
             } else {
-                ENTREGADORES[entregadorEmGestao].pontos -= valor;
+                ENTREGADORES[colaboradorEmGestao].pontos -= valor;
             }
             
             salvarEntregadores();
@@ -1431,10 +1517,14 @@
         }
 
         function resetarSenhaEntregador() {
-            if (!entregadorEmGestao) return;
+            if (!colaboradorEmGestao) return;
             
-            showConfirmBox('Confirmação', `Deseja resetar a senha de ${entregadorEmGestao} para "${SENHA_RESET}"?`, () => {
-                ENTREGADORES[entregadorEmGestao].senha = SENHA_RESET;
+            showConfirmBox('Confirmação', `Deseja resetar a senha de ${colaboradorEmGestao} para "${SENHA_RESET}"?`, () => {
+                // Reinicia a senha em TODOS os grupos em que o usuário está
+                if (ENTREGADORES[colaboradorEmGestao]) ENTREGADORES[colaboradorEmGestao].senha = SENHA_RESET;
+                if (ATENDENTES[colaboradorEmGestao]) ATENDENTES[colaboradorEmGestao].senha = SENHA_RESET;
+                if (GESTORES[colaboradorEmGestao]) GESTORES[colaboradorEmGestao].senha = SENHA_RESET;
+
                 salvarEntregadores();
                 carregarDetalhesGestao();
                 showMessageBox('✅ Sucesso', 'Senha resetada com sucesso!');
@@ -1442,64 +1532,90 @@
         }
 
         function removerEntregadorAcao() {
-            if (!entregadorEmGestao) return;
+            if (!colaboradorEmGestao) return; // CORREÇÃO: Usa a nova variável
             
-            showConfirmBox('⚠️ ATENÇÃO', `Tem certeza que deseja REMOVER ${entregadorEmGestao}? Esta ação não pode ser desfeita!`, () => {
-                delete ENTREGADORES[entregadorEmGestao];
-                delete GESTORES[entregadorEmGestao]; 
-                delete ATENDENTES[entregadorEmGestao]; 
+            showConfirmBox('⚠️ ATENÇÃO', `Tem certeza que deseja REMOVER ${colaboradorEmGestao}? Esta ação não pode ser desfeita!`, () => {
+                // CORREÇÃO: Remove de todos os grupos
+                delete ENTREGADORES[colaboradorEmGestao];
+                delete GESTORES[colaboradorEmGestao]; 
+                delete ATENDENTES[colaboradorEmGestao]; 
 
                 salvarEntregadores();
-                entregadorEmGestao = null;
+                colaboradorEmGestao = null;
                 document.getElementById('gestaoCard').style.display = 'none';
-                document.getElementById('entregadorGestaoSelect').value = '';
-                atualizarListaEntregadores();
-                showMessageBox('✅ Sucesso', 'Entregador removido com sucesso!');
+                document.getElementById('colaboradorGestaoSelect').value = '';
+                // REMOVIDO: chamada a atualizarListaColaboradores, pois a lista foi excluída
+                // atualizarListaColaboradores();
+                showMessageBox('✅ Sucesso', 'Colaborador removido com sucesso!');
             });
         }
 
         function adicionarEntregador() {
-            const nome = document.getElementById('novoEntregadorNome').value.trim();
-            const senha = document.getElementById('novoEntregadorSenha').value.trim();
-            const telefone = document.getElementById('novoEntregadorTelefone').value.trim();
+            const nome = document.getElementById('novoColaboradorNome').value.trim(); // NOVO ID
+            const senha = document.getElementById('novoColaboradorSenha').value.trim(); // NOVO ID
+            const telefone = document.getElementById('novoColaboradorTelefone').value.trim(); // NOVO ID
+            const funcoesSelect = document.getElementById('novoColaboradorFuncao'); // NOVO ID
+            const funcoes = Array.from(funcoesSelect.selectedOptions).map(option => option.value);
             
-            if (!nome || !senha) {
-                showMessageBox('⚠️ Erro', 'Nome e senha são obrigatórios!');
+            if (!nome || !senha || funcoes.length === 0) {
+                showMessageBox('⚠️ Erro', 'Nome, senha e pelo menos uma Função são obrigatórios!');
                 return;
             }
             
-            if (ENTREGADORES[nome]) {
-                showMessageBox('⚠️ Erro', 'Este entregador já existe!');
+            // Verifica se o nome já existe em *qualquer* grupo
+            if (ENTREGADORES[nome] || ATENDENTES[nome] || GESTORES[nome]) {
+                showMessageBox('⚠️ Erro', 'Este colaborador já existe!');
                 return;
             }
             
-            ENTREGADORES[nome] = {
-                senha: senha,
-                telefone: telefone || '',
-                pontos: 0,
-                historicoPontos: []
-            };
+            const novoColaborador = { senha: senha, telefone: telefone || '' };
+            
+            if (funcoes.includes('Entregador')) {
+                 ENTREGADORES[nome] = { ...novoColaborador, pontos: 0, historicoPontos: [] };
+            }
+            if (funcoes.includes('Caixa')) {
+                 ATENDENTES[nome] = { senha: senha };
+            }
+            if (funcoes.includes('Gestor')) {
+                 GESTORES[nome] = { senha: senha };
+            }
             
             salvarEntregadores();
-            document.getElementById('novoEntregadorNome').value = '';
-            document.getElementById('novoEntregadorSenha').value = '';
-            document.getElementById('novoEntregadorTelefone').value = '';
-            atualizarListaEntregadores();
+            
+            // Limpa os campos
+            document.getElementById('novoColaboradorNome').value = '';
+            document.getElementById('novoColaboradorSenha').value = '';
+            document.getElementById('novoColaboradorTelefone').value = '';
+            funcoesSelect.selectedIndex = -1; // Desseleciona todas as opções
+
+            // REMOVIDO: chamada a atualizarListaColaboradores, pois a lista foi excluída
+            // atualizarListaColaboradores();
             carregarGestaoAdm(); 
-            showMessageBox('✅ Sucesso', `Entregador ${nome} adicionado com sucesso!`);
+            showMessageBox('✅ Sucesso', `Colaborador ${nome} adicionado com sucesso! Funções: ${funcoes.join(', ')}`);
         }
 
-        function atualizarListaEntregadores() {
-            const lista = document.getElementById('listaEntregadoresAdm');
-            lista.innerHTML = Object.entries(ENTREGADORES).map(([nome, dados]) => `
-                <div class="adm-item">
-                    <div>
-                        <strong>${nome}</strong><br>
-                        <small>Pontos: ${dados.pontos} | Tel: ${formatarTelefone(dados.telefone)}</small>
+        // REMOVIDA: A função atualizarListaColaboradores não é mais necessária já que a lista foi removida do HTML
+        /*
+        function atualizarListaColaboradores() {
+            const lista = document.getElementById('listaColaboradoresAdm'); // NOVO ID
+            const todosColaboradores = obterTodosColaboradores();
+            
+            lista.innerHTML = Object.entries(todosColaboradores).map(([nome, dados]) => {
+                const funcoesStr = dados.funcoes.join(' / ');
+                // O campo pontos só existe em 'Entregador'. Se não existir, mostra N/A.
+                const pontos = dados.funcoes.includes('Entregador') ? (dados.pontos || 0) : 'N/A';
+
+                return `
+                    <div class="adm-item">
+                        <div>
+                            <strong>${nome}</strong><br>
+                            <small>Funções: ${funcoesStr} | Pontos: ${pontos} | Tel: ${formatarTelefone(dados.telefone)}</small>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
+        */
 
         // --- FUNÇÕES DE MODAL QUE ESTAVAM FALTANDO ---
         
@@ -3298,11 +3414,11 @@
                 </div>
                 
                 <div id="screenAdmin" class="screen">
-                    <h2>⚙️ Gestão de Entregadores</h2>
+                    <h2>⚙️ Gestão de Colaboradores</h2>
                     
-                    <h4 style="color: #3d4b7a;">Selecione o Entregador para Gerenciar:</h4>
+                    <h4 style="color: #3d4b7a;">Selecione o Colaborador para Gerenciar:</h4>
                     <div class="form-group">
-                        <select id="entregadorGestaoSelect" onchange="carregarDetalhesGestao()"></select>
+                        <select id="colaboradorGestaoSelect" onchange="carregarDetalhesGestao()"></select>
                     </div>
 
                     <div id="gestaoDetalhesContainer">
@@ -3310,6 +3426,16 @@
                             <p>Colaborador: <strong><span id="colabGestaoNome"></span></strong></p>
                             <p>Senha: <strong><span id="colabGestaoSenha"></span></strong></p>
                             <h3 style="margin-top: 10px;">Pontuação Atual: <span id="colabGestaoPontos" style="color: #d63031;">0 Pts</span></h3>
+                            
+                            <h4 style="margin-top: 20px;">Definir Função(ões)</h4>
+                            <div class="form-group">
+                                <select id="colaboradorFuncaoSelect" multiple>
+                                    <option value="Entregador">🚴 Entregador</option>
+                                    <option value="Caixa">📦 Operador/Caixa</option>
+                                    <option value="Gestor">📊 Fiscal/Gestor</option>
+                                </select>
+                            </div>
+                            <button class="btn-primary" style="background: #28a745;" onclick="atualizarFuncaoColaborador()">✅ Atualizar Funções</button>
                             
                             <div class="gestao-actions-grid">
                                 <button class="btn-add-points" onclick="ajustarPontosEntregador('adicionar')">➕ Adicionar Pontos</button>
@@ -3319,19 +3445,25 @@
                             </div>
                         </div>
                         
-                        <h4 style="color: #3d4b7a; margin: 20px 0 10px;">Lista de Entregadores</h4>
-                        <div id="listaEntregadoresAdm"></div>
-                    </div>
+                        </div>
 
-                    <h4 style="color: #3d4b7a;">➕ Adicionar Novo Entregador</h4>
+                    <h4 style="color: #3d4b7a;">➕ Adicionar Novo Colaborador</h4>
                     <div class="form-group">
-                        <input type="text" id="novoEntregadorNome" placeholder="Nome do Entregador">
+                        <input type="text" id="novoColaboradorNome" placeholder="Nome do Colaborador">
                     </div>
                     <div class="form-group">
-                        <input type="password" id="novoEntregadorSenha" placeholder="Senha">
+                        <input type="password" id="novoColaboradorSenha" placeholder="Senha">
                     </div>
                     <div class="form-group">
-                        <input type="tel" id="novoEntregadorTelefone" placeholder="Telefone (opcional)">
+                        <input type="tel" id="novoColaboradorTelefone" placeholder="Telefone (opcional)">
+                    </div>
+                    <div class="form-group">
+                        <label for="novoColaboradorFuncao">Função(ões) do Colaborador *</label>
+                        <select id="novoColaboradorFuncao" multiple required>
+                            <option value="Entregador">🚴 Entregador</option>
+                            <option value="Caixa">📦 Operador/Caixa</option>
+                            <option value="Gestor">📊 Fiscal/Gestor</option>
+                        </select>
                     </div>
                     <button class="btn-primary" onclick="adicionarEntregador()">Adicionar</button>
 
