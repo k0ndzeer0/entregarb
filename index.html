@@ -5,6 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Entregas - Rio Branco (Dashboard)</title>
     
+<!--
+==============================================
+⚠️ IMPORTANTE - EXECUTE NO SUPABASE PRIMEIRO:
+==============================================
+
+-- 1. COLUNAS PARA SISTEMA DE SEPARAÇÃO DE ITENS:
+ALTER TABLE entregas
+ADD COLUMN IF NOT EXISTS itens TEXT,
+ADD COLUMN IF NOT EXISTS totalitens INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS itensseparados BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS separadopor TEXT,
+ADD COLUMN IF NOT EXISTS separadoem TIMESTAMPTZ;
+
+-- 2. COLUNA PARA INDICAR QUE A ENTREGA ESTÁ PRONTA PARA CONFERÊNCIA DO CAIXA:
+-- IMPORTANTE: Execute este SQL no Supabase SQL Editor para criar a coluna!
+ALTER TABLE entregas
+ADD COLUMN IF NOT EXISTS pronto_para_entrega BOOLEAN DEFAULT false;
+
+-- 3. TABELA DE COLABORADORES (CRIAR SE NÃO EXISTIR):
+CREATE TABLE IF NOT EXISTS colaboradores (
+    id SERIAL PRIMARY KEY,
+    nome TEXT NOT NULL,
+    senha TEXT NOT NULL,
+    funcoes TEXT NOT NULL, -- Ex: "Caixa,Separador,Gestor,Entregador"
+    telefone TEXT,
+    pontos INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. INSERIR DADOS DOS COLABORADORES:
+INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
+('Maria Eduarda', '0000', 'Caixa,Separador', '', 0),
+('Andre Lopes', '0000', 'Caixa,Separador', '', 0),
+('Carlos Santos', '0000', 'Caixa,Separador,Gestor,Entregador', '66996005936', 100),
+('Marilu Silva', '0000', 'Gestor,Caixa,Separador', '', 0),
+('Ciro Rogerio', '0000', 'Gestor,Caixa', '', 0),
+('Hugo Aguiar', '0000', 'Caixa,Separador', '', 0),
+('Kátia', '0000', 'Caixa,Separador', '', 0),
+('Carlos Mello', '5875', 'Caixa,Separador,Gestor,Entregador', '66996005936', 100),
+('Jonatan Piva', '1234', 'Entregador,Separador', '66988888888', 0);
+
+==============================================
+-->
+    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     
@@ -38,9 +82,27 @@
         let conferenciaProblemaDocId = null;
         
         // --- DADOS DE USUÁRIO (Ainda no LocalStorage/Memória para facilitar login) ---
-        let GESTORES = { 'Cadu': { senha: '1228' }, 'Mari': { senha: '2992' }, 'Junior': { senha: '0701' }, 'Carlos': { senha: '5875' } };
-        let ENTREGADORES = { 'Carlos': { senha: '587596', telefone: '66996005936', pontos: 100, historicoPontos: [] }, 'Cadu': { senha: '1228', telefone: '66999999999', pontos: 50, historicoPontos: [] }, 'Jonatan': { senha: '1234', telefone: '66988888888', pontos: 0, historicoPontos: [] } };
-        let ATENDENTES = { 'Katia': { senha: '1234' }, 'Maria Eduarda': { senha: '1234' }, 'Andre Lopes': { senha: '1234' }, 'Hugo Aguiar': { senha: '1234' }, 'Cadu': { senha: '1234' }, 'Junior': { senha: '1234' }, 'Marilu': { senha: '1234' } };
+        let GESTORES = { 'Ciro Rogerio': { senha: '0000' }, 'Marilu Silva': { senha: '0000' }, 'Carlos Santos': { senha: '0000' }, 'Carlos Mello': { senha: '5875' } };
+        let ENTREGADORES = { 'Carlos Santos': { senha: '0000', telefone: '66996005936', pontos: 100, historicoPontos: [] }, 'Carlos Mello': { senha: '5875', telefone: '66996005936', pontos: 100, historicoPontos: [] }, 'Jonatan Piva': { senha: '1234', telefone: '66988888888', pontos: 0, historicoPontos: [] } };
+        let ATENDENTES = { 'Maria Eduarda': { senha: '0000' }, 'Andre Lopes': { senha: '0000' }, 'Carlos Santos': { senha: '0000' }, 'Marilu Silva': { senha: '0000' }, 'Ciro Rogerio': { senha: '0000' }, 'Hugo Aguiar': { senha: '0000' }, 'Kátia': { senha: '0000' }, 'Carlos Mello': { senha: '5875' } };
+        
+        // Separadores de pedidos
+        let SEPARADORES = { 
+            'Maria Eduarda': { senha: '0000' }, 
+            'Andre Lopes': { senha: '0000' }, 
+            'Carlos Santos': { senha: '0000' }, 
+            'Marilu Silva': { senha: '0000' }, 
+            'Hugo Aguiar': { senha: '0000' }, 
+            'Kátia': { senha: '0000' }, 
+            'Carlos Mello': { senha: '5875' }, 
+            'Jonatan Piva': { senha: '1234' } 
+        };
+
+        // Array temporário para armazenar itens durante criação
+        let itensPedido = [];
+
+        // Objeto para rastrear itens marcados na separação
+        let itensChecados = {};
 
         // --- VARIÁVEIS DE MODAL ---
         let customModal = null;
@@ -149,17 +211,18 @@
         }
         
         // FUNÇÃO PRINCIPAL DE NEGÓCIO: CALCULAR TAXA DE ENTREGA
+        // Regras CORRIGIDAS: 0 a 39,99 = 8 reais | 40,00 a 79,99 = 5 reais | 80,00+ = 0 reais
         function calcularTaxaEntrega(valorPedido, isento = false) {
             if (isento) return 0.00; // Se isento, a taxa é zero
             
-            const valor = limparMoeda(valorPedido); // Garante que estamos usando o valor numérico
+            const valor = typeof valorPedido === 'number' ? valorPedido : limparMoeda(valorPedido); // Aceita número ou string
             
-            if (valor < 40.00) {
-                return 8.00;
-            } else if (valor >= 40.00 && valor < 80.00) {
-                return 5.00;
+            if (valor >= 0 && valor <= 39.99) {
+                return 8.00; // De 0 a 39,99 cobramos 8 reais
+            } else if (valor >= 40.00 && valor <= 79.99) {
+                return 5.00; // De 40,00 a 79,99 cobramos 5 reais
             } else {
-                return 0.00;
+                return 0.00; // 80,00+ não cobramos taxa de entrega
             }
         }
         
@@ -245,7 +308,8 @@
         function salvarEntregadores() {
              localStorage.setItem('ENTREGADORES', JSON.stringify(ENTREGADORES));
              localStorage.setItem('ATENDENTES', JSON.stringify(ATENDENTES)); 
-             localStorage.setItem('GESTORES', JSON.stringify(GESTORES)); 
+             localStorage.setItem('GESTORES', JSON.stringify(GESTORES));
+             localStorage.setItem('SEPARADORES', JSON.stringify(SEPARADORES));
         }
 
         function carregarEntregasDoLocalStorage() {
@@ -377,9 +441,9 @@
         }
 
         // Função de inicialização principal
-        window.init = function() {
+        window.init = async function() {
             initializeModalElements();
-            carregarDadosLocais(); 
+            await carregarColaboradoresSupabase(); // Carrega colaboradores do Supabase
             // O filtro padrão só é importante na tela fiscal, mas o chamamos aqui para ter os valores na memória antes do listener
             configurarFiltroPadrao(); 
             setupSupabaseListener(); 
@@ -392,22 +456,77 @@
             if (isentarTaxaCheckbox) { isentarTaxaCheckbox.addEventListener('change', atualizarTaxasCriacao); }
             if (valorRecebidoInput) { valorRecebidoInput.addEventListener('input', () => calcularTroco(null)); }
             
-            setInterval(atualizarTelas, 1000);
+            // Atualiza apenas uma vez na inicialização; demais updates virão do Realtime
             atualizarTelas(); 
         };
+
+        // Função para carregar colaboradores do Supabase
+        async function carregarColaboradoresSupabase() {
+            try {
+                const { data, error } = await window.supabaseClient
+                    .from('colaboradores')
+                    .select('*');
+
+                if (error) {
+                    console.error('Erro ao carregar colaboradores:', error);
+                    // Se der erro, usa dados locais como fallback
+                    carregarDadosLocais();
+                    return;
+                }
+
+                // Limpa os arrays
+                ENTREGADORES = {};
+                ATENDENTES = {};
+                GESTORES = {};
+                SEPARADORES = {};
+
+                // Processa os dados do Supabase
+                data.forEach(colaborador => {
+                    const nome = colaborador.nome;
+                    const senha = colaborador.senha;
+                    const funcoes = colaborador.funcoes ? colaborador.funcoes.split(',') : [];
+
+                    // Adiciona às categorias baseado nas funções
+                    funcoes.forEach(funcao => {
+                        const funcaoTrim = funcao.trim();
+                        if (funcaoTrim === 'Entregador') {
+                            ENTREGADORES[nome] = { senha: senha, telefone: colaborador.telefone || '', pontos: colaborador.pontos || 0, historicoPontos: [] };
+                        }
+                        if (funcaoTrim === 'Caixa') {
+                            ATENDENTES[nome] = { senha: senha };
+                        }
+                        if (funcaoTrim === 'Gestor') {
+                            GESTORES[nome] = { senha: senha };
+                        }
+                        if (funcaoTrim === 'Separador') {
+                            SEPARADORES[nome] = { senha: senha };
+                        }
+                    });
+                });
+
+                console.log('Colaboradores carregados do Supabase:', { ENTREGADORES, ATENDENTES, GESTORES, SEPARADORES });
+                
+            } catch (error) {
+                console.error('Erro ao conectar com Supabase:', error);
+                // Fallback para dados locais
+                carregarDadosLocais();
+            }
+        }
 
         function carregarDadosLocais() {
             const entregadoresSalvos = localStorage.getItem('ENTREGADORES');
             const atendentesSalvos = localStorage.getItem('ATENDENTES');
             const gestoresSalvos = localStorage.getItem('GESTORES');
+            const separadoresSalvos = localStorage.getItem('SEPARADORES');
 
             // Se não houver dados salvos, salva os padrões
             if (!entregadoresSalvos) {
-                salvarEntregadores(); // Salva todos os arrays padrão (ENTREGADORES, ATENDENTES, GESTORES)
+                salvarEntregadores(); // Salva todos os arrays padrão (ENTREGADORES, ATENDENTES, GESTORES, SEPARADORES)
             } else {
                 ENTREGADORES = JSON.parse(entregadoresSalvos);
                 ATENDENTES = JSON.parse(atendentesSalvos);
                 GESTORES = JSON.parse(gestoresSalvos);
+                SEPARADORES = JSON.parse(separadoresSalvos || '{}');
             }
         }
 
@@ -469,19 +588,13 @@
             const endereco = document.getElementById('clienteEndereco').value.trim();
             const bairro = document.getElementById('clienteBairro').value.trim();
             const telefone = document.getElementById('clienteTelefone').value.trim().replace(/\D/g, ''); 
-            const geladeira = document.getElementById('temGeladeira').value;
-            const forma = document.getElementById('formaPagamento').value;
-            const status = document.getElementById('statusPagamento').value;
-            const valor = document.getElementById('valorTotal').value.trim();
-            const recibo = document.getElementById('numeroRecibo').value.trim();
-            const valorRecebidoInput = document.getElementById('valorRecebido');
             const observacaoCaixa = document.getElementById('observacaoCaixa').value.trim();
-            const urgente = document.getElementById('entregaUrgente').value;
-            const isentarTaxa = document.getElementById('isentarTaxa').checked; 
+            const urgenteCheckbox = document.getElementById('entregaUrgente');
+            const urgente = urgenteCheckbox ? (urgenteCheckbox.checked ? 'Sim' : 'Não') : 'Não'; 
             
             
-            // 1. Validação de campos obrigatórios
-            if (!caixa || !nome || !endereco || !bairro || !geladeira || !status || !valor || !urgente) {
+            // 1. Validação de campos obrigatórios (apenas dados básicos)
+            if (!caixa || !nome || !endereco || !bairro || !telefone) {
                 showMessageBox('⚠️ Erro', 'Por favor, preencha todos os campos obrigatórios (*).');
                 return;
             }
@@ -493,61 +606,45 @@
                  showMessageBox('⚠️ Erro', 'Por favor, explique o motivo do "Outro" caixa.');
                  return;
             }
-            if ((status === 'NÃO' || status === 'SIM') && !forma) {
-                 showMessageBox('⚠️ Erro', 'Selecione a Forma de Pagamento.');
-                 return;
-            }
-            
-            // 2. Validação de troco
-            const valorPedidoNumerico = limparMoeda(valor);
-            const taxaEntregaNumerica = calcularTaxaEntrega(valorPedidoNumerico, isentarTaxa);
-            const valorTotalNumerico = valorPedidoNumerico + taxaEntregaNumerica;
-            const valorRecebidoNumerico = parseFloat(valorRecebidoInput ? valorRecebidoInput.value : '0') || 0; 
-            const trocoADevolverNumerico = valorRecebidoNumerico > valorTotalNumerico ? parseFloat((valorRecebidoNumerico - valorTotalNumerico).toFixed(2)) : 0; 
-
-            
-            // Verificação adicional do valor
-            if (valorPedidoNumerico <= 0) {
-                showMessageBox('⚠️ Erro', 'O valor total do pedido deve ser maior que zero.');
-                return;
-            }
-
-            if (forma === 'Dinheiro' && status === 'NÃO') {
-                if (valorRecebidoNumerico <= 0 || valorRecebidoNumerico < valorTotalNumerico) {
-                    showMessageBox('⚠️ Erro', `Para Dinheiro (Cobrar na entrega), o Valor Recebido (${formatarMoeda(valorRecebidoNumerico)}) deve ser igual ou maior que o TOTAL A COBRAR (${formatarMoeda(valorTotalNumerico)}).`);
-                    return;
-                }
-            }
             
             const nowISO = new Date().toISOString();
 
-            // CORREÇÃO ESSENCIAL: Usando MINÚSCULAS para os nomes das colunas para evitar o erro do Postgres/Supabase
+            // Criação apenas com dados básicos - valores serão preenchidos na separação
+            // CORREÇÃO: Se não tiver itens, vai direto para aguardando_finalizacao (caixa preencher valores)
             const entrega = {
-                clientenome: nome, // Corrigido para minúsculas
+                clientenome: nome,
                 endereco: endereco,
                 bairro: bairro,
-                // publicidade: publicidade, // Removido campo não existente
                 telefone: telefone,
-                geladeira: geladeira,
-                pagamento: forma,
-                jaPago: status,
-                valor: formatarMoeda(valorPedidoNumerico), 
-                valornumerico: valorPedidoNumerico, // Corrigido para minúsculas
-                taxaentrega: formatarMoeda(taxaEntregaNumerica), // Corrigido para minúsculas
-                taxaentreganumerica: taxaEntregaNumerica, // Corrigido para minúsculas
-                valoracobrar: formatarMoeda(valorTotalNumerico), // Corrigido para minúsculas
-                valoracobrarnumerico: valorTotalNumerico, // Corrigido para minúsculas
-                isentartaxa: isentarTaxa ? 'Sim' : 'Não', // Corrigido para minúsculas
-                troco: (forma === 'Dinheiro' && status === 'NÃO' && trocoADevolverNumerico > 0) ? formatarMoeda(trocoADevolverNumerico) : 'Não',
-                recibo: recibo || 'Não Informado',
-                caixa: caixa, 
-                operadorcaixa: operadorCaixa, // Corrigido para minúsculas
-                status: 'pendente',
-                criadopor: operadorCaixa, // Corrigido para minúsculas
-                data: new Date().toLocaleDateString('pt-BR'), 
-                urgente: urgente,
-                observacaocaixa: observacaoCaixa, // Corrigido para minúsculas
-                comprovanteentregador: 'Não aplicável' // Corrigido para minúsculas
+                caixa: caixa,
+                operadorcaixa: operadorCaixa,
+                status: itensPedido.length > 0 ? 'aguardando_separacao' : 'aguardando_finalizacao',
+                criadopor: operadorCaixa,
+                data: new Date().toLocaleDateString('pt-BR'),
+                observacaocaixa: observacaoCaixa,
+                comprovanteentregador: 'Não aplicável',
+
+                // Campos de itens para separação
+                itens: itensPedido.length > 0 ? JSON.stringify(itensPedido) : null,
+                totalitens: itensPedido.length,
+                itensseparados: itensPedido.length === 0 ? true : false, // Se não tiver itens, considera já separado
+                separadopor: itensPedido.length === 0 ? operadorCaixa + ' (Sem itens)' : null,
+                separadoem: itensPedido.length === 0 ? nowISO : null,
+                
+                // Campos que serão preenchidos na separação/finalização (valores padrão)
+                geladeira: null,
+                pagamento: null,
+                japago: null,
+                valor: null,
+                valornumerico: null,
+                taxaentrega: null,
+                taxaentreganumerica: null,
+                valoracobrar: null,
+                valoracobrarnumerico: null,
+                isentartaxa: 'Não',
+                troco: 'Não',
+                recibo: null,
+                urgente: urgente
             };
 
             try {
@@ -564,9 +661,22 @@
                 showMessageBox('✅ Sucesso', `Entrega criada com sucesso! Cliente: ${entrega.clientenome}`);
 
                 document.getElementById('formEntrega').reset();
-                document.getElementById('outroCaixaMotivo').style.display = 'none';
-                document.getElementById('trocoGroup').style.display = 'none';
-                document.getElementById('formaPagamentoGroup').style.display = 'none';
+                const outroCaixaEl = document.getElementById('outroCaixaMotivo');
+                if (outroCaixaEl) outroCaixaEl.style.display = 'none';
+                const trocoGroupEl = document.getElementById('trocoGroup');
+                if (trocoGroupEl) trocoGroupEl.style.display = 'none';
+                const formaPgEl = document.getElementById('formaPagamentoGroup');
+                if (formaPgEl) formaPgEl.style.display = 'none';
+                
+                // Limpar checkbox urgente
+                const urgenteCheckbox = document.getElementById('entregaUrgente');
+                if (urgenteCheckbox) urgenteCheckbox.checked = false;
+                
+                // Limpar array de itens e campos
+                itensPedido = [];
+                const textoInput = document.getElementById('itensPedidoTexto');
+                if (textoInput) textoInput.value = '';
+                processarItensTexto();
                 
                 atualizarTaxasCriacao(); 
                 atualizarTelas(); 
@@ -601,6 +711,528 @@
                 return false;
             }
         }
+        
+        // ===== FUNÇÕES DE GERENCIAMENTO DE ITENS =====
+
+        function processarItensTexto() {
+            const textoInput = document.getElementById('itensPedidoTexto');
+            const previewDiv = document.getElementById('previewItens');
+            const listaPreview = document.getElementById('listaPreview');
+            
+            if (!textoInput) return;
+            
+            const texto = textoInput.value.trim();
+            
+            if (!texto) {
+                itensPedido = [];
+                previewDiv.style.display = 'none';
+                return;
+            }
+            
+            // Processa o texto linha por linha
+            const linhas = texto.split('\n').filter(linha => linha.trim());
+            itensPedido = [];
+            
+            linhas.forEach((linha, index) => {
+                linha = linha.trim();
+                if (!linha) return;
+                
+                // CORREÇÃO: Prioriza unidades (kg/g/L/ml) - se tiver unidade, NÃO mostra "x"
+                // Exemplos:
+                // "5x leite italac" → mostra "5x leite italac" (sem unidade, mostra x)
+                // "4kg de linguiça na brasa" → mostra "4kg de linguiça na brasa" (com unidade, sem x)
+                // "1x linguiça friella 5kg" → mostra "linguiça friella 5kg" (tem unidade, ignora o x)
+                
+                let quantidade = 1;
+                let nome = linha;
+                let mostraX = false; // Por padrão não mostra x
+                
+                // PRIMEIRO: Verifica se tem unidade (kg/g/L/ml) em qualquer lugar do texto
+                const temUnidade = /(\d+(?:\.\d+)?)\s*(kg|g|G|KG|l|L|ml|ML|mL)\b/i.test(linha);
+                
+                if (temUnidade) {
+                    // Tem unidade - NÃO mostra "x", remove prefixo "Nx " se tiver
+                    // Ex: "1x linguiça friella 5kg" → "linguiça friella 5kg"
+                    // Ex: "4kg de linguiça na brasa" → "4kg de linguiça na brasa"
+                    nome = linha.replace(/^\d+(?:\.\d+)?x\s*/i, ''); // Remove "Nx " do início
+                    quantidade = 1;
+                    mostraX = false;
+                } else {
+                    // NÃO tem unidade - pode ter "x" ou não
+                    // Formato: "Nx Nome" (ex: "5x leite italac")
+                    const match = linha.match(/^(\d+(?:\.\d+)?)x\s*(.+)$/i);
+                    if (match) {
+                        quantidade = parseFloat(match[1]) || 1;
+                        nome = match[2].trim();
+                        mostraX = true; // Mostra "x" porque não tem unidade
+                    } else {
+                        // Formato: "Nome" (sem x e sem unidade) - mostra "1x" como padrão
+                        quantidade = 1;
+                        nome = linha;
+                        mostraX = true; // Mostra "1x" como padrão
+                    }
+                }
+                
+                itensPedido.push({
+                    id: Date.now() + index,
+                    nome: nome,
+                    quantidade: quantidade,
+                    separado: false,
+                    mostraX: mostraX // Flag para controlar exibição
+                });
+            });
+            
+            // Mostra preview
+            if (itensPedido.length > 0) {
+                listaPreview.innerHTML = itensPedido.map(item => {
+                    // Só mostra "x" se a flag mostraX for true (não tem unidade)
+                    const quantidadeDisplay = item.mostraX === true ? `<strong>${item.quantidade}x</strong> ` : '';
+                    return `<div style="margin: 2px 0;">• ${quantidadeDisplay}${item.nome}</div>`;
+                }).join('');
+                previewDiv.style.display = 'block';
+            } else {
+                previewDiv.style.display = 'none';
+            }
+        }
+
+        // Tornar funções globais
+        window.processarItensTexto = processarItensTexto;
+        
+        // ===== FUNÇÕES DA TELA DE SEPARAÇÃO =====
+
+        function carregarPedidosSeparacao() {
+            const entregas = obterEntregasFiltradas();
+            
+            // Filtra entregas com itens aguardando separação
+            const aguardandoSeparacao = entregas.filter(e => 
+                e.totalitens > 0 && 
+                e.status === 'aguardando_separacao'
+            );
+            
+            const totalElement = document.getElementById('totalAguardandoSeparacao');
+            if (totalElement) {
+                totalElement.textContent = aguardandoSeparacao.length;
+            }
+            
+            const lista = document.getElementById('listaPedidosSeparacao');
+            if (!lista) return;
+            
+            if (aguardandoSeparacao.length === 0) {
+                lista.innerHTML = '<div class="empty-state"><p>✅ Nenhum pedido aguardando separação no momento.</p></div>';
+                return;
+            }
+            
+            lista.innerHTML = aguardandoSeparacao.map(e => criarCardSeparacao(e)).join('');
+        }
+
+        function criarCardSeparacao(e) {
+            let itens = [];
+            try {
+                itens = JSON.parse(e.itens || '[]');
+            } catch (error) {
+                console.error('Erro ao parsear itens:', error);
+                itens = [];
+            }
+            
+            const urgenteBadge = e.urgente === 'Sim' ? '<span class="urgente-badge">⚠️ URGENTE</span>' : '';
+            
+            return `
+                <div class="entrega-card ${e.urgente === 'Sim' ? 'urgent-card' : ''}">
+                    <div class="entrega-header">
+                        <div class="entrega-nome">
+                            ${e.displayId} - ${e.clienteNome} ${urgenteBadge}
+                            <span class="badge-itens">${itens.length} itens</span>
+                        </div>
+                        <span class="status-badge" style="background: #ffc107; color: #000;">
+                            AGUARDANDO SEPARAÇÃO
+                        </span>
+                    </div>
+                    
+                    <div class="entrega-info"><strong>📍 Destino:</strong> ${e.endereco}, ${e.bairro}</div>
+                    <div class="entrega-info"><strong>📞 Telefone:</strong> ${formatarTelefone(e.telefone)}</div>
+                    ${e.observacaocaixa ? `<div class="entrega-info obs-caixa"><strong>📢 Obs. Caixa:</strong> ${e.observacaocaixa}</div>` : ''}
+                    
+                    <div class="entrega-info" style="margin-top: 10px; color:#555;">
+                        Após conferir todos os itens, conclua a separação. O caixa finalizará o pedido com valores e pagamento.
+                    </div>
+                    
+                    <div class="checkbox-group" style="margin: 15px 0; padding: 10px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; cursor: pointer; font-weight: bold;">
+                            <input type="checkbox" 
+                                   id="ignorarSeparacao_${e.id}" 
+                                   onchange="toggleIgnorarSeparacao(${e.id})"
+                                   style="margin-right: 10px; width: 20px; height: 20px;">
+                            <span>✅ Cliente já separou os itens na loja (Pular Separação)</span>
+                        </label>
+                    </div>
+                    
+                    <div class="checklist-container" id="checklistContainer_${e.id}">
+                        <h4>📋 Checklist de Itens (Marque conforme separa):</h4>
+                        ${itens.map(item => {
+                            // Só mostra "x" se a flag mostraX for true (não tem unidade)
+                            const quantidadeDisplay = item.mostraX === true ? `<strong>${item.quantidade}x</strong> ` : '';
+                            return `
+                            <div class="item-checklist" style="margin: 8px 0; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="checkbox" 
+                                           id="item_${e.id}_${item.id}" 
+                                           onchange="marcarItemSeparado(${e.id}, ${item.id})"
+                                           style="margin-right: 10px; width: 18px; height: 18px;">
+                                    <span>${quantidadeDisplay}${item.nome}</span>
+                                </label>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    
+                    <div class="entrega-actions" style="margin-top: 15px;">
+                        <button class="btn-primary" onclick="finalizarSeparacao(${e.id})">
+                            ✅ Concluir Separação e Liberar
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Objeto para rastrear se a separação foi ignorada
+        let separacaoIgnorada = {};
+
+        function toggleIgnorarSeparacao(entregaId) {
+            const checkbox = document.getElementById(`ignorarSeparacao_${entregaId}`);
+            const checklistContainer = document.getElementById(`checklistContainer_${entregaId}`);
+            
+            if (!checkbox) return;
+            
+            separacaoIgnorada[entregaId] = checkbox.checked;
+            
+            // Mostra/oculta o checklist baseado no checkbox
+            if (checklistContainer) {
+                if (checkbox.checked) {
+                    checklistContainer.style.display = 'none';
+                } else {
+                    checklistContainer.style.display = 'block';
+                }
+            }
+        }
+
+        function marcarItemSeparado(entregaId, itemId) {
+            const checkbox = document.getElementById(`item_${entregaId}_${itemId}`);
+            if (!checkbox) {
+                console.error('Checkbox não encontrado:', `item_${entregaId}_${itemId}`);
+                return;
+            }
+            
+            if (!itensChecados[entregaId]) {
+                itensChecados[entregaId] = [];
+            }
+            
+            if (checkbox.checked) {
+                if (!itensChecados[entregaId].includes(itemId)) {
+                    itensChecados[entregaId].push(itemId);
+                }
+                // Feedback visual
+                checkbox.parentElement.style.backgroundColor = '#e8f5e8';
+                checkbox.parentElement.style.borderColor = '#28a745';
+            } else {
+                itensChecados[entregaId] = itensChecados[entregaId].filter(id => id !== itemId);
+                // Remove feedback visual
+                checkbox.parentElement.style.backgroundColor = '';
+                checkbox.parentElement.style.borderColor = '#ddd';
+            }
+            
+            console.log(`Item ${itemId} marcado: ${checkbox.checked}. Total marcados: ${itensChecados[entregaId].length}`);
+        }
+
+        async function finalizarSeparacao(entregaId) {
+            const entrega = todasEntregas.find(e => e.id === entregaId);
+            if (!entrega) {
+                showMessageBox('❌ Erro', 'Entrega não encontrada!');
+                return;
+            }
+            
+            // Verifica se a separação foi ignorada
+            const ignorada = separacaoIgnorada[entregaId] === true;
+            
+            if (!ignorada) {
+                let itens = [];
+                try {
+                    itens = JSON.parse(entrega.itens || '[]');
+                } catch (error) {
+                    console.error('Erro ao parsear itens:', error);
+                }
+                
+                const checados = itensChecados[entregaId] || [];
+                
+                // Verifica se TODOS os itens foram checados
+                if (checados.length !== itens.length) {
+                    showMessageBox('⚠️ Atenção', 
+                        `Você precisa marcar TODOS os ${itens.length} itens antes de finalizar!\n\nMarcados: ${checados.length}/${itens.length}`
+                    );
+                    return;
+                }
+                
+                showConfirmBox('Confirmação Final', 
+                    `Confirma que TODOS os ${itens.length} itens foram separados e conferidos?\n\nO pedido será liberado para o entregador.`, 
+                    async () => {
+                        const updates = {
+                            itensseparados: true,
+                            separadopor: usuarioLogado,
+                            separadoem: new Date().toISOString(),
+                            status: 'aguardando_finalizacao'
+                        };
+                        
+                        if (await atualizarEntrega(entregaId, updates)) {
+                            showMessageBox('✅ Sucesso', 
+                                `Separação concluída!\n\nPedido ${entrega.displayId} aguardando finalização do CAIXA.`
+                            );
+                            
+                            // Limpa estado de checagem
+                            delete itensChecados[entregaId];
+                            delete separacaoIgnorada[entregaId];
+                            
+                            // Atualiza lista
+                            setupSupabaseListener();
+                        }
+                    }
+                );
+            } else {
+                // Separação ignorada - cliente já separou
+                showConfirmBox('Confirmação Final', 
+                    `Confirma que o cliente já separou os itens na loja?\n\nO pedido será liberado para o entregador sem necessidade de separação.`, 
+                    async () => {
+                        const updates = {
+                            itensseparados: true,
+                            separadopor: usuarioLogado + ' (Cliente separou na loja)',
+                            separadoem: new Date().toISOString(),
+                            status: 'aguardando_finalizacao'
+                        };
+                        
+                        if (await atualizarEntrega(entregaId, updates)) {
+                            showMessageBox('✅ Sucesso', 
+                                `Separação ignorada!\n\nPedido ${entrega.displayId} aguardando finalização do CAIXA.`
+                            );
+                            
+                            // Limpa estado
+                            delete separacaoIgnorada[entregaId];
+                            
+                            // Atualiza lista
+                            setupSupabaseListener();
+                        }
+                    }
+                );
+            }
+        }
+
+        // Tornar funções globais
+        window.carregarPedidosSeparacao = carregarPedidosSeparacao;
+        window.marcarItemSeparado = marcarItemSeparado;
+        window.finalizarSeparacao = finalizarSeparacao;
+        window.toggleIgnorarSeparacao = toggleIgnorarSeparacao;
+
+        // ===== FINALIZAÇÃO PELO CAIXA (APÓS SEPARAÇÃO) =====
+        function carregarPedidosParaFinalizar() {
+            const lista = document.getElementById('listaPedidosFinalizacao');
+            const totalElement = document.getElementById('totalAguardandoFinalizacao');
+            
+            if (!lista) return;
+
+            const aguardando = obterEntregasFiltradas().filter(e => e.status === 'aguardando_finalizacao');
+
+            if (totalElement) {
+                totalElement.textContent = aguardando.length;
+            }
+
+            if (aguardando.length === 0) {
+                lista.innerHTML = '<div class="empty-state"><p>Nenhum pedido aguardando finalização.</p></div>';
+                return;
+            }
+
+            lista.innerHTML = aguardando.map(e => criarCardFinalizacao(e)).join('');
+        }
+
+        function criarCardFinalizacao(e) {
+            return `
+                <div class="entrega-card">
+                    <div class="entrega-header">
+                        <div class="entrega-nome">${e.displayId} - ${e.clienteNome}</div>
+                        <span class="status-badge" style="background:#17a2b8">AGUARDANDO FINALIZAÇÃO</span>
+                    </div>
+                    <div class="entrega-info"><strong>📍 Endereço:</strong> ${e.endereco}, ${e.bairro}</div>
+                    <div class="entrega-info"><strong>📞 Telefone:</strong> ${formatarTelefone(e.telefone)}</div>
+                    ${e.observacaocaixa ? `<div class="entrega-info obs-caixa"><strong>📢 Obs. Caixa:</strong> ${e.observacaocaixa}</div>` : ''}
+                    
+                    <div class="form-row" style="margin-top:10px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>❄️ Geladeira? *</label>
+                            <select id="fin_geladeira_${e.id}" onchange="toggleTrocoFields(${e.id})">
+                                <option value="">Selecione...</option>
+                                <option value="Sim">Sim</option>
+                                <option value="Não">Não</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>💰 Valor do Pedido *</label>
+                            <input type="number" step="0.01" id="fin_valor_${e.id}" placeholder="Ex: 120.50" oninput="calcularTrocoFinalizacao(${e.id})">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1;">
+                            <label>Status do Pagamento *</label>
+                            <select id="fin_pag_${e.id}" onchange="toggleTrocoFields(${e.id})">
+                                <option value="NÃO">💰 Cobrar na entrega</option>
+                                <option value="SIM">✅ Já Pago</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Forma *</label>
+                            <select id="fin_forma_${e.id}" onchange="toggleTrocoFields(${e.id})">
+                                <option value="">Selecione...</option>
+                                <option value="Dinheiro">Dinheiro</option>
+                                <option value="Pix">Pix</option>
+                                <option value="Cartão">Cartão</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="checkbox-group" style="margin: 10px 0; padding: 10px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px;">
+                        <label style="display: flex; align-items: center; cursor: pointer; font-weight: bold;">
+                            <input type="checkbox" 
+                                   id="fin_isentar_${e.id}" 
+                                   onchange="calcularTrocoFinalizacao(${e.id})"
+                                   style="margin-right: 10px; width: 20px; height: 20px;">
+                            <span>✅ Isentar Taxa de Entrega</span>
+                        </label>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Taxa de Entrega (Automática)</label>
+                        <input type="text" id="fin_taxa_${e.id}" readonly disabled style="background: #f0f0f0; font-weight: bold;">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label style="font-size: 16px; color: #d63031;">VALOR A COBRAR (TOTAL)</label>
+                        <input type="text" id="fin_total_${e.id}" readonly disabled style="background: #e6e6e6; font-weight: bold; color: #d63031; font-size: 18px;">
+                    </div>
+                    
+                    <div class="form-group" id="trocoGroup_${e.id}" style="display: none;">
+                        <div class="form-group">
+                            <label>Valor Recebido do Cliente (Para Troco) *</label>
+                            <input type="number" step="0.01" id="fin_valor_recebido_${e.id}" placeholder="Ex: 60.00" oninput="calcularTrocoFinalizacao(${e.id})">
+                        </div>
+                        <div class="form-group">
+                            <label>Troco a Devolver (Automático)</label>
+                            <input type="text" id="fin_troco_${e.id}" readonly disabled style="background: #f0f0f0; font-weight: bold;">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Recibo/NFe (Opcional)</label>
+                        <input type="text" id="fin_recibo_${e.id}" placeholder="Número do recibo/NFe">
+                    </div>
+                    
+                    <div class="entrega-actions">
+                        <button class="btn-primary" onclick="finalizarPedidoCaixa(${e.id})">✅ Finalizar e Liberar</button>
+                    </div>
+                </div>`;
+        }
+
+        async function finalizarPedidoCaixa(entregaId) {
+            const geladeira = document.getElementById(`fin_geladeira_${entregaId}`)?.value;
+            const valorNumerico = parseFloat(document.getElementById(`fin_valor_${entregaId}`)?.value || '0');
+            const pagamento = document.getElementById(`fin_pag_${entregaId}`)?.value;
+            const forma = document.getElementById(`fin_forma_${entregaId}`)?.value;
+            const recibo = document.getElementById(`fin_recibo_${entregaId}`)?.value || null;
+            const valorRecebido = parseFloat(document.getElementById(`fin_valor_recebido_${entregaId}`)?.value || '0');
+            const isentarCheckbox = document.getElementById(`fin_isentar_${entregaId}`);
+            const isento = isentarCheckbox ? isentarCheckbox.checked : false;
+
+            if (!geladeira || !valorNumerico || !pagamento || !forma) {
+                return showMessageBox('⚠️ Atenção', 'Preencha geladeira, valor, status e forma.');
+            }
+
+            // CORREÇÃO: Usa a função calcularTaxaEntrega com a regra correta
+            const taxa = calcularTaxaEntrega(valorNumerico, isento);
+            const total = valorNumerico + taxa;
+
+            // Validação de troco para dinheiro
+            if (forma === 'Dinheiro' && pagamento === 'NÃO') {
+                if (valorRecebido <= 0 || valorRecebido < total) {
+                    return showMessageBox('⚠️ Erro', `Para Dinheiro (Cobrar na entrega), o Valor Recebido (${formatarMoeda(valorRecebido)}) deve ser igual ou maior que o TOTAL A COBRAR (${formatarMoeda(total)}).`);
+                }
+            }
+
+            const troco = forma === 'Dinheiro' && pagamento === 'NÃO' && valorRecebido > total ? valorRecebido - total : 0;
+
+            const ok = await atualizarEntrega(entregaId, {
+                geladeira: geladeira,
+                valornumerico: valorNumerico,
+                valor: formatarMoeda(valorNumerico),
+                taxaentreganumerica: taxa,
+                taxaentrega: formatarMoeda(taxa),
+                valoracobrarnumerico: total,
+                valoracobrar: formatarMoeda(total),
+                japago: pagamento,
+                pagamento: forma,
+                recibo: recibo,
+                troco: troco > 0 ? formatarMoeda(troco) : 'Não',
+                isentartaxa: isento ? 'Sim' : 'Não',
+                status: 'pendente'
+            });
+
+            if (ok) {
+                showMessageBox('✅ Sucesso', 'Pedido finalizado e liberado para o entregador.');
+                carregarPedidosParaFinalizar();
+                setupSupabaseListener();
+            }
+        }
+
+        function toggleTrocoFields(entregaId) {
+            const pagamento = document.getElementById(`fin_pag_${entregaId}`)?.value;
+            const forma = document.getElementById(`fin_forma_${entregaId}`)?.value;
+            const trocoGroup = document.getElementById(`trocoGroup_${entregaId}`);
+            
+            if (trocoGroup) {
+                if (pagamento === 'NÃO' && forma === 'Dinheiro') {
+                    trocoGroup.style.display = 'block';
+                } else {
+                    trocoGroup.style.display = 'none';
+                }
+            }
+            
+            calcularTrocoFinalizacao(entregaId);
+        }
+
+        function calcularTrocoFinalizacao(entregaId) {
+            const valorInput = document.getElementById(`fin_valor_${entregaId}`);
+            const valorRecebidoInput = document.getElementById(`fin_valor_recebido_${entregaId}`);
+            const totalInput = document.getElementById(`fin_total_${entregaId}`);
+            const trocoInput = document.getElementById(`fin_troco_${entregaId}`);
+            const taxaInput = document.getElementById(`fin_taxa_${entregaId}`);
+            const isentarCheckbox = document.getElementById(`fin_isentar_${entregaId}`);
+            
+            if (!valorInput || !totalInput || !taxaInput) return;
+            
+            const valorPedido = parseFloat(valorInput.value) || 0;
+            const isento = isentarCheckbox ? isentarCheckbox.checked : false;
+            const taxaEntrega = calcularTaxaEntrega(valorPedido, isento);
+            const valorTotal = valorPedido + taxaEntrega;
+            
+            taxaInput.value = formatarMoeda(taxaEntrega);
+            totalInput.value = formatarMoeda(valorTotal);
+            
+            if (trocoInput && valorRecebidoInput) {
+                const valorRecebido = parseFloat(valorRecebidoInput.value) || 0;
+                const troco = valorRecebido > valorTotal ? valorRecebido - valorTotal : 0;
+                trocoInput.value = formatarMoeda(troco);
+            }
+        }
+
+        // Expor funções
+        window.carregarPedidosParaFinalizar = carregarPedidosParaFinalizar;
+        window.finalizarPedidoCaixa = finalizarPedidoCaixa;
+        window.toggleTrocoFields = toggleTrocoFields;
+        window.calcularTrocoFinalizacao = calcularTrocoFinalizacao;
         
         // --- SETUP DO LISTENER DO SUPABASE (REALTIME) ---
         async function setupSupabaseListener() {
@@ -641,7 +1273,15 @@
                     motivoCancelamento: e.motivoCancelamento, // Assume que esta chave está ok
                     canceladoPor: e.canceladopor, // CORREÇÃO: Usar chave em minúscula
                     conferidoPor: e.conferidopor, // CORREÇÃO: Usar chave em minúscula
-                    saiuEm: e.saiuem // CORREÇÃO: Garante que a coluna saíuem seja mapeada corretamente
+                    conferidopor: e.conferidopor, // Mantém também em minúscula para compatibilidade
+                    conferidoem: e.conferidoem || e.conferidoEm, // Mapeia conferidoem
+                    conferidoEm: e.conferidoem || e.conferidoEm, // Mantém também em camelCase
+                    saiuEm: e.saiuem, // CORREÇÃO: Garante que a coluna saíuem seja mapeada corretamente
+                    prontoParaEntrega: e.pronto_para_entrega, // Nova coluna para controle de conferência
+                    separadopor: e.separadopor, // Quem separou os itens
+                    separadoem: e.separadoem || e.separadoEm, // Quando foi separado
+                    finalizadoem: e.finalizadoem || e.finalizadoEm, // Quando foi entregue
+                    finalizadoEm: e.finalizadoem || e.finalizadoEm // Mantém também em camelCase
                 })).reverse(); // Inverte para mostrar o mais novo no topo da lista
                 
                 console.log(`[Supabase] Dados de entregas carregados. Total: ${todasEntregas.length}`);
@@ -725,13 +1365,18 @@
                 carregarEntregasEntregador();
             } else if (tipoUsuario === 'fiscal') {
                 carregarDashboardFiscal();
+            } else if (tipoUsuario === 'separador') {
+                // Adicionar atualização para separadores
+                carregarPedidosSeparacao();
             } else if (tipoUsuario === 'atendimento') {
                 if (document.getElementById('screenConferenciaCaixa').classList.contains('active')) {
-                     carregarConferenciaCaixa();
+                    carregarConferenciaCaixa();
                 } else {
-                     mostrarTela('screenCriarEntrega');
-                     atualizarTaxasCriacao(); 
+                    mostrarTela('screenCriarEntrega');
+                    atualizarTaxasCriacao();
                 }
+            } else if (tipoUsuario === 'finalizar') {
+                carregarPedidosParaFinalizar();
             }
         }
 
@@ -774,6 +1419,19 @@
                     opt.textContent = nome;
                     select.appendChild(opt);
                 });
+            } else if (tipo === 'finalizar') {
+                document.getElementById('loginTitulo').textContent = 'Login - Finalizar Entregas';
+                document.getElementById('loginAtendimento').style.display = 'block';
+                document.getElementById('loginSenha').style.display = 'none';
+                
+                const select = document.getElementById('atendenteNome');
+                select.innerHTML = '<option value="">Selecione seu nome...</option>';
+                Object.keys(ATENDENTES).forEach(nome => {
+                    const opt = document.createElement('option');
+                    opt.value = nome;
+                    opt.textContent = nome;
+                    select.appendChild(opt);
+                });
             } else {
                 document.getElementById('loginAtendimento').style.display = 'none';
                 document.getElementById('loginSenha').style.display = 'block';
@@ -781,7 +1439,21 @@
                 const select = document.getElementById('loginNome');
                 select.innerHTML = '<option value="">Selecione...</option>';
                 
-                const usuarios = tipo === 'entregador' ? ENTREGADORES : GESTORES;
+                // Modificado para incluir separadores
+                let usuarios;
+                let tituloLogin;
+                
+                if (tipo === 'entregador') {
+                    usuarios = ENTREGADORES;
+                    tituloLogin = 'Login - Entregador';
+                } else if (tipo === 'separador') {
+                    usuarios = SEPARADORES;
+                    tituloLogin = 'Login - Separador';
+                } else {
+                    usuarios = GESTORES;
+                    tituloLogin = 'Login - Gestão';
+                }
+                
                 Object.keys(usuarios).forEach(nome => {
                     const opt = document.createElement('option');
                     opt.value = nome;
@@ -789,7 +1461,7 @@
                     select.appendChild(opt);
                 });
                 
-                document.getElementById('loginTitulo').textContent = tipo === 'entregador' ? 'Login - Entregador' : 'Login - Gestão';
+                document.getElementById('loginTitulo').textContent = tituloLogin;
             }
         }
 
@@ -804,14 +1476,20 @@
             
             if (ATENDENTES[nome] && ATENDENTES[nome].senha === senha) {
                 usuarioLogado = nome;
-                tipoUsuario = 'atendimento';
-                document.getElementById('operadorLogado').textContent = nome;
-                document.getElementById('operadorConferencia').textContent = nome;
+                tipoUsuario = tipoLoginAtual; // Usa o tipo atual (atendimento ou finalizar)
                 document.getElementById('logoutBtn').style.display = 'block';
                 
-                mostrarTela('screenCriarEntrega');
-                togglePagamentoFields(); 
-                atualizarTaxasCriacao(); 
+                if (tipoLoginAtual === 'atendimento') {
+                    document.getElementById('operadorLogado').textContent = nome;
+                    document.getElementById('operadorConferencia').textContent = nome;
+                    mostrarTela('screenCriarEntrega');
+                    togglePagamentoFields(); 
+                    atualizarTaxasCriacao(); 
+                } else if (tipoLoginAtual === 'finalizar') {
+                    document.getElementById('operadorFinalizar').textContent = nome;
+                    mostrarTela('screenFinalizarEntregas');
+                    carregarPedidosParaFinalizar();
+                }
             } else {
                 showMessageBox('❌ Erro', 'Nome ou senha incorretos!');
             }
@@ -826,7 +1504,15 @@
                 return;
             }
             
-            const usuarios = tipoLoginAtual === 'entregador' ? ENTREGADORES : GESTORES;
+            // Modificado para incluir separadores
+            let usuarios;
+            if (tipoLoginAtual === 'entregador') {
+                usuarios = ENTREGADORES;
+            } else if (tipoLoginAtual === 'separador') {
+                usuarios = SEPARADORES;
+            } else {
+                usuarios = GESTORES;
+            }
             
             if (usuarios[nome] && usuarios[nome].senha === senha) {
                 usuarioLogado = nome;
@@ -837,6 +1523,11 @@
                     document.getElementById('nomeEntregador').textContent = nome;
                     mostrarTela('screenEntregador');
                     carregarEntregasEntregador();
+                } else if (tipoLoginAtual === 'separador') {
+                    // Adicionar bloco do separador
+                    document.getElementById('nomeSeparador').textContent = nome;
+                    mostrarTela('screenSeparacao');
+                    carregarPedidosSeparacao();
                 } else {
                     document.getElementById('nomeFiscal').textContent = nome;
                     document.getElementById('dataFiscal').textContent = new Date().toLocaleDateString('pt-BR');
@@ -891,7 +1582,7 @@
             document.getElementById('entregasEmRotaCount').textContent = emRota.length;
             
             const totalCobranca = emRota.reduce((sum, e) => {
-                 if (e.jaPago === 'NÃO' && (e.pagamento === 'Dinheiro' || e.pagamento === 'Pix' || e.pagamento === 'Cartão')) {
+                 if (e.japago === 'NÃO' && (e.pagamento === 'Dinheiro' || e.pagamento === 'Pix' || e.pagamento === 'Cartão')) {
                       return sum + (e.valorACobrarNumerico || 0);
                  }
                  return sum;
@@ -950,7 +1641,7 @@
                 actions = `
                     <button class="btn-small btn-pegar" onclick="pegarEntrega(${e.id})">📦 Pegar</button>
                     <button class="btn-small btn-maps" onclick="copiarEndereco('${e.endereco}', '${e.bairro}')">📋 Copiar Endereço</button>
-                    ${tipoUsuario === 'atendimento' && e.jaPago === 'NÃO' ? `<button class="btn-small btn-cancelar" onclick="abrirModalCancelamento(${e.id}, 'cancelada')">❌ Cancelar</button>` : ''}
+                    ${tipoUsuario === 'atendimento' && e.japago === 'NÃO' ? `<button class="btn-small btn-cancelar" onclick="abrirModalCancelamento(${e.id}, 'cancelada')">❌ Cancelar</button>` : ''}
                 `;
             } else if (isEmRota) {
                  if (!saiuEmRegistrado) {
@@ -987,7 +1678,7 @@
                 ? `(+ Taxa: ${e.taxaEntrega})` 
                 : (e.isentarTaxa === 'Sim' ? '(Taxa Isenta)' : '');
             
-            if (e.jaPago === 'SIM') {
+            if (e.japago === 'SIM') {
                  valorSection = `
                      <div class="entrega-info" style="margin-top: 10px;">
                          <strong style="color: #28a745;">✅ VALOR PAGO:</strong> ${valorACobrar}
@@ -1012,7 +1703,28 @@
             
             // NOVO: Exibir Observação do Caixa para entregadores
             const obsCaixaDisplay = e.observacaoCaixa ? `<div class="entrega-info obs-caixa"><strong>📢 Obs. Caixa:</strong> ${e.observacaoCaixa}</div>` : '';
-
+            
+            // NOVO: Exibir itens do pedido para o entregador
+            let itensDisplay = '';
+            if (e.totalitens > 0) {
+                let itens = [];
+                try {
+                    itens = JSON.parse(e.itens || '[]');
+                } catch (error) {
+                    console.error('Erro ao parsear itens:', error);
+                }
+                
+                if (itens.length > 0) {
+                    itensDisplay = `
+                        <div class="entrega-info" style="margin-top: 10px;">
+                            <strong>📦 Itens do Pedido (${itens.length}):</strong>
+                            <ul class="lista-itens-resumo">
+                                ${itens.map(item => `<li>${item.quantidade}x ${item.nome}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+            }
 
             return `
                 <div class="entrega-card ${e.urgente === 'Sim' ? 'urgent-card' : ''} ${e.status === 'problema conferencia' ? 'problem-card' : ''} ${isNext ? 'next-delivery-card' : ''}">
@@ -1029,6 +1741,7 @@
                     <div class="entrega-info"><strong>💳 Pagamento:</strong> ${e.pagamento || 'Não informado'} ${gelaBadge}</div>
                     ${tempoNaRota}
                     ${obsCaixaDisplay}
+                    ${itensDisplay}
                     ${e.problemaConferencia ? `<div class="entrega-info obs-caixa" style="border-color: #dc3545;"><strong>🚫 Problema Conf.:</strong> ${e.problemaConferencia}</div>` : ''}
                     <div class="entrega-actions">${actions}</div>
                 </div>
@@ -1050,7 +1763,7 @@
             
             const urgenteBadge = e.urgente === 'Sim' ? '<span class="urgente-badge" style="font-size: 10px; margin-left: 5px;">URGENTE</span>' : '';
             const valorDisplay = e.valorACobrar || e.valor;
-            const isCobrar = e.jaPago === 'NÃO';
+            const isCobrar = e.japago === 'NÃO';
 
             // A linha inteira é clicável para mostrar os detalhes
             return `
@@ -1112,9 +1825,10 @@
         
         function carregarConferenciaCaixa() {
             const entregas = obterEntregasFiltradas();
-            // Filtra por status 'aguardando conferencia' E entregas criadas pelo usuário logado
+            // CORREÇÃO: Qualquer pessoa do caixa pode conferir, não apenas quem criou
+            // Filtra por status 'aguardando conferencia' OU prontoParaEntrega = true
             const aguardandoConferencia = entregas.filter(e => 
-                e.status === 'aguardando conferencia' && e.criadoPor === usuarioLogado
+                e.status === 'aguardando conferencia' || e.prontoParaEntrega === true
             );
             
             const listaConferencia = document.getElementById('listaEntregasConferencia');
@@ -1127,7 +1841,7 @@
         }
         
         function criarCardConferencia(e) {
-            const isDinheiro = e.pagamento === 'Dinheiro' && e.jaPago === 'NÃO';
+            const isDinheiro = e.pagamento === 'Dinheiro' && e.japago === 'NÃO';
             
             const cobranca = isDinheiro 
                 ? `<div class="conferencia-detail valor-dinheiro"><strong>💵 Valor em Dinheiro:</strong> ${e.valorACobrar} (Troco a Devolver: ${e.troco})</div>` 
@@ -1677,7 +2391,8 @@
                  status: 'aguardando conferencia', // <--- CORREÇÃO: Mudar para 'aguardando conferencia'
                  finalizadoem: new Date().toISOString(), 
                  observacao: obs,
-                 comprovanteentregador: comprovanteUrl 
+                 comprovanteentregador: comprovanteUrl,
+                 pronto_para_entrega: true // Indica que está pronto para conferência do caixa
              };
              
              if (await atualizarEntrega(docId, updates)) {
@@ -1775,6 +2490,9 @@
                     problemaconferencia: null // Limpa qualquer problema anterior
                 };
                 
+                // Adiciona limpeza do pronto_para_entrega ao fechar a conferência
+                updates.pronto_para_entrega = false;
+                
                 if (await atualizarEntrega(id, updates)) {
                     showMessageBox('✅ Sucesso', 'Conferência confirmada com sucesso!');
                     // REMOVIDO: carregarConferenciaCaixa(); // Deixa o listener fazer isso
@@ -1841,30 +2559,30 @@
                  <p><strong>Geladeira:</strong> ${entrega.geladeira}</p>
                  <hr style="margin: 15px 0;">
                  <h4>Financeiro e Logística</h4>
+                 <p><strong>Criada em:</strong> ${formatSupabaseDate(entrega.created_at)}</p>
                  <p><strong>Valor Total:</strong> ${entrega.valorACobrar || entrega.valor}</p>
-                 <p><strong>Pagamento:</strong> ${entrega.pagamento} (${entrega.jaPago === 'SIM' ? 'JÁ PAGO' : 'COBRAR'})</p>
+                 <p><strong>Pagamento:</strong> ${entrega.pagamento} (${entrega.japago === 'SIM' ? 'JÁ PAGO' : 'COBRAR'})</p>
                  <p><strong>Troco Necessário:</strong> ${entrega.troco}</p>
                  <p><strong>Recibo/NFe:</strong> ${entrega.recibo}</p>
                  <p><strong>Caixa/Origem:</strong> ${entrega.caixa} (Operador: ${entrega.operadorCaixa})</p>
                  <p><strong>Observação Caixa:</strong> ${entrega.observacaoCaixa || 'N/A'}</p>
                  <hr style="margin: 15px 0;">
-                 <h4>Timeline</h4>
-                 <p><strong>Criada em:</strong> ${formatSupabaseDate(entrega.created_at)}</p>
                  
-                 ${entrega.entregador 
-                    ? `<p><strong>Entregador:</strong> ${entrega.entregador}</p>` 
-                    : `<p><strong>Entregador:</strong> Aguardando Atribuição</p>`}
+                 <h4>Separação e Conferência</h4>
+                 ${entrega.separadopor 
+                    ? `<p><strong>Separado por:</strong> ${entrega.separadopor}</p>`
+                    : `<p><strong>Separado por:</strong> N/A</p>`}
                  
-                 ${hasData('saiuEm')
-                    ? `<p><strong>Saiu em:</strong> ${formatSupabaseDate(entrega.saiuEm)}</p>` 
+                 ${(entrega.separadoem && entrega.separadoem.toString().toLowerCase() !== 'n/a')
+                    ? `<p><strong>Separado em:</strong> ${formatSupabaseDate(entrega.separadoem)}</p>`
                     : ``}
-
-                 ${hasData('finalizadoEm')
-                    ? `<p><strong>Finalizada em:</strong> ${formatSupabaseDate(entrega.finalizadoEm)}</p>`
-                    : ``}
-                    
-                 ${hasData('observacao') 
-                    ? `<p><strong>Observações (Entregador):</strong> ${entrega.observacao}</p>` 
+                 
+                 ${(entrega.conferidopor || entrega.conferidoPor)
+                    ? `<p><strong>Conferido por:</strong> ${entrega.conferidopor || entrega.conferidoPor}</p>`
+                    : `<p><strong>Conferido por:</strong> Aguardando Conferência</p>`}
+                 
+                 ${(entrega.conferidoem && entrega.conferidoem.toString().toLowerCase() !== 'n/a') || (entrega.conferidoEm && entrega.conferidoEm.toString().toLowerCase() !== 'n/a')
+                    ? `<p><strong>Conferido em:</strong> ${formatSupabaseDate(entrega.conferidoem || entrega.conferidoEm)}</p>`
                     : ``}
                  <hr style="margin: 15px 0;">
              `;
@@ -1921,7 +2639,7 @@
              if (!entrega) return showMessageBox('❌ Erro', 'Entrega não encontrada!');
 
              // Se for necessário cobrar, pede confirmação
-             if (entrega.jaPago === 'NÃO' && entrega.pagamento === 'Dinheiro') {
+             if (entrega.japago === 'NÃO' && entrega.pagamento === 'Dinheiro') {
                   showConfirmBox('🚨 Cobrança Pendente', `Confirma que o valor ${entrega.valorACobrar || entrega.valor} foi cobrado do cliente?`, () => {
                       continuarFinalizarEntrega(docId, entrega);
                   });
@@ -1953,7 +2671,8 @@
                  status: 'aguardando conferencia', // <--- CORREÇÃO: Mudar para 'aguardando conferencia'
                  finalizadoem: new Date().toISOString(),
                  observacao: obs,
-                 comprovanteentregador: 'Não aplicável'
+                 comprovanteentregador: 'Não aplicável',
+                 pronto_para_entrega: true // Indica que está pronto para conferência do caixa
              };
 
              if (await atualizarEntrega(docId, updates)) {
@@ -3098,6 +3817,138 @@
             background: #28a745;
             color: white;
         }
+        
+        /* ===== SISTEMA DE SEPARAÇÃO DE ITENS ===== */
+        
+        .itens-pedido-container {
+            background: var(--card-bg);
+            border: 2px dashed var(--border-color);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .itens-pedido-container h4 {
+            color: var(--text-primary);
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+        
+        .item-adicionado {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-left: 4px solid var(--button-bg);
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .item-adicionado:hover {
+            background: #e9ecef;
+            border-left-color: #d63031;
+        }
+        
+        [data-theme="dark"] .item-adicionado {
+            background: #374151;
+            border-color: #4a5568;
+        }
+        
+        [data-theme="dark"] .item-adicionado:hover {
+            background: #4a5568;
+        }
+        
+        .item-adicionado span {
+            flex: 1;
+            color: var(--text-primary);
+        }
+        
+        .item-adicionado strong {
+            color: #d63031;
+            margin-right: 8px;
+        }
+        
+        .checklist-container {
+            background: rgba(0, 123, 255, 0.05);
+            border: 2px solid #007bff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        [data-theme="dark"] .checklist-container {
+            background: rgba(0, 123, 255, 0.1);
+        }
+        
+        .checklist-container h4 {
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        
+        .item-checklist {
+            margin-bottom: 10px;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 8px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        
+        .checkbox-item:hover {
+            background: rgba(0, 123, 255, 0.1);
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            width: 22px;
+            height: 22px;
+            margin-right: 12px;
+            cursor: pointer;
+            accent-color: #28a745;
+        }
+        
+        .checkbox-item span {
+            color: var(--text-primary);
+        }
+        
+        .checkbox-item input[type="checkbox"]:checked + span {
+            text-decoration: line-through;
+            opacity: 0.6;
+            color: #28a745 !important;
+        }
+        
+        .badge-itens {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+        
+        .lista-itens-resumo {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+        
+        .lista-itens-resumo li {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            list-style-type: circle;
+        }
     </style>
 </head>
 <body>
@@ -3121,6 +3972,12 @@
                     
                     <button class="role-btn" onclick="mostrarLogin('atendimento')">
                         📦 CRIAR ENTREGA (CAIXA)
+                    </button>
+                    <button class="role-btn" onclick="mostrarLogin('separador')">
+                        🛒 SEPARAÇÃO DE ITENS
+                    </button>
+                    <button class="role-btn" onclick="mostrarLogin('finalizar')">
+                        🧾 FINALIZAR ENTREGAS
                     </button>
                     <button class="role-btn" onclick="mostrarLogin('entregador')">
                         🚴 ENTREGADOR
@@ -3203,81 +4060,35 @@
                         </div>
 
                         <div class="form-group">
-                            <label>Geladeira? (Produtos refrigerados) *</label>
-                            <select id="temGeladeira" required>
-                                <option value="">Selecione...</option>
-                                <option value="Sim">Sim</option>
-                                <option value="Não">Não</option>
-                            </select>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Status do Pagamento *</label>
-                                <select id="statusPagamento" required onchange="togglePagamentoFields()">
-                                    <option value="NÃO">💰 Cobrar na entrega</option>
-                                    <option value="SIM">✅ Já Pago (Antecipado)</option>
-                                </select>
-                            </div>
-                            <div class="form-group" id="formaPagamentoGroup" style="display: none;">
-                                <label>Forma de Pagamento *</label>
-                                <select id="formaPagamento" required onchange="togglePagamentoFields(); atualizarTaxasCriacao();">
-                                    <option value="">Selecione...</option>
-                                    <option value="Dinheiro">Dinheiro</option>
-                                    <option value="Pix">Pix</option>
-                                    <option value="Cartão">Cartão</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Valor do Pedido (Exclui Taxa) *</label>
-                            <input type="number" step="0.01" id="valorTotal" required placeholder="Ex: 558.69 (Use ponto . para centavos)">
-                        </div>
-
-                        <div class="form-group">
-                             <label>Taxa de Entrega (Automática)</label>
-                             <input type="text" id="taxaEntregaDisplay" readonly disabled style="background: #f0f0f0; font-weight: bold; color: #3d4b7a;">
-                             <div class="checkbox-group">
-                                 <input type="checkbox" id="isentarTaxa">
-                                 <label for="isentarTaxa" style="margin-bottom: 0; font-weight: normal;">❌ Isentar Taxa de Entrega (Gratuidade)</label>
-                             </div>
-                        </div>
-
-                        <div class="form-group">
-                             <label style="font-size: 16px; color: #d63031;">VALOR A COBRAR (TOTAL)</label>
-                             <input type="text" id="valorCobrarDisplay" readonly disabled style="background: #e6e6e6; font-weight: bold; color: #d63031; font-size: 18px;">
-                        </div>
-                        <div class="form-group" id="trocoGroup" style="display: none;">
-                            <div class="form-group">
-                                 <label>Valor Recebido do Cliente (Para Troco) *</label>
-                                 <input type="number" step="0.01" id="valorRecebido" placeholder="Ex: 60.00 (Valor que o cliente vai dar)">
-                            </div>
-                            <div class="form-group">
-                                 <label>Troco a Devolver (Automático)</label>
-                                 <input type="text" id="trocoADevolver" readonly disabled style="background: #f0f0f0; font-weight: bold;">
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Entrega Urgente? *</label>
-                                <select id="entregaUrgente" required>
-                                    <option value="Não">Não</option>
-                                    <option value="Sim">Sim</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Recibo/NFe</label>
-                                <input type="number" id="numeroRecibo" placeholder="Nº da NFe/Recibo (Opcional)">
-                            </div>
-                        </div>
-                        
-                        <div class="form-group">
                             <label>📢 Observação do Caixa (Opcional)</label>
                             <textarea id="observacaoCaixa" placeholder="Ex: Entregar até 18h / Entregar após 16h / Tocar a campainha 2 vezes"></textarea>
                         </div>
 
+                        <div class="checkbox-group" style="margin: 15px 0; padding: 10px; background: #ffe6e6; border: 2px solid #dc3545; border-radius: 8px;">
+                            <label style="display: flex; align-items: center; cursor: pointer; font-weight: bold;">
+                                <input type="checkbox" 
+                                       id="entregaUrgente" 
+                                       style="margin-right: 10px; width: 20px; height: 20px;">
+                                <span>⚠️ ENTREGA URGENTE</span>
+                            </label>
+                        </div>
+
+                        <!-- SISTEMA DE ITENS DO PEDIDO -->
+                        <div class="itens-pedido-container">
+                            <h4>📦 Itens do Pedido (Opcional - para Separação)</h4>
+                            <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
+                                Cole aqui a lista de itens do pedido para que o separador possa conferir
+                            </p>
+                            
+                            <div class="form-group">
+                                <textarea id="itensPedidoTexto" placeholder="Exemplo:&#10;2x Arroz 5kg&#10;1x Feijão 1kg&#10;3x Leite 1L&#10;1x Açúcar 1kg" rows="4" oninput="processarItensTexto()"></textarea>
+                            </div>
+                            
+                            <div id="previewItens" style="display: none; margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                                <strong>Preview dos itens:</strong>
+                                <div id="listaPreview"></div>
+                            </div>
+                        </div>
 
                         <button type="button" onclick="criarEntrega()" class="btn-primary">📤 Enviar Nova Entrega</button>
                     </form>
@@ -3297,6 +4108,31 @@
                          </div>
                      
                      <button class="btn-voltar" onclick="mostrarTela('screenCriarEntrega')">← Voltar para Criar Entrega</button>
+                </div>
+
+                <div id="screenFinalizarEntregas" class="screen">
+                    <h2>🧾 Finalizar Entregas</h2>
+                    <p style="text-align: center; margin-bottom: 20px;">Caixa Logado: <strong id="operadorFinalizar"></strong></p>
+                    
+                    <div class="stats-grid full">
+                        <div class="stat-card" style="border-color: #17a2b8;">
+                            <div class="stat-number" style="color: #17a2b8;" id="totalAguardandoFinalizacao">0</div>
+                            <div class="stat-label">Pedidos Aguardando Finalização</div>
+                        </div>
+                    </div>
+                    
+                    <h3>📋 Pedidos para Finalizar</h3>
+                    <p style="font-size: 13px; color: #666; margin-bottom: 15px; text-align: center;">
+                        Preencha os valores e informações de pagamento para liberar ao entregador
+                    </p>
+                    
+                    <div id="listaPedidosFinalizacao">
+                        <div class="empty-state">
+                            <p>Carregando pedidos...</p>
+                        </div>
+                    </div>
+                    
+                    <button class="btn-voltar" onclick="logout()">← Sair</button>
                 </div>
 
                 <div id="screenEntregador" class="screen">
@@ -3468,6 +4304,34 @@
                     <button class="btn-primary" onclick="adicionarEntregador()">Adicionar</button>
 
                     <button class="btn-voltar" onclick="irParaDashboardFiscal()">← Voltar</button>
+                </div>
+                
+                <!-- TELA DE SEPARAÇÃO DE ITENS -->
+                <div id="screenSeparacao" class="screen">
+                    <h2>🛒 Separação de Pedidos</h2>
+                    <p style="text-align: center; margin-bottom: 20px; color: var(--text-secondary);">
+                        Separador: <strong id="nomeSeparador" style="color: var(--text-primary);"></strong>
+                    </p>
+                    
+                    <div class="stats-grid full">
+                        <div class="stat-card" style="border-color: #ffc107;">
+                            <div class="stat-number orange" id="totalAguardandoSeparacao">0</div>
+                            <div class="stat-label">Pedidos Aguardando Separação</div>
+                        </div>
+                    </div>
+                    
+                    <h3>📋 Pedidos para Separar</h3>
+                    <p style="font-size: 13px; color: #666; margin-bottom: 15px; text-align: center;">
+                        Marque cada item conforme for separando. Só libere quando TODOS estiverem prontos.
+                    </p>
+                    
+                    <div id="listaPedidosSeparacao">
+                        <div class="empty-state">
+                            <p>Carregando pedidos...</p>
+                        </div>
+                    </div>
+                    
+                    <button class="btn-voltar" onclick="logout()">← Sair</button>
                 </div>
             </div>
         </div>
