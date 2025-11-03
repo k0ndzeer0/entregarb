@@ -10,6 +10,51 @@
 ⚠️ IMPORTANTE - EXECUTE NO SUPABASE PRIMEIRO:
 ==============================================
 
+-- 0. TABELA DE CLIENTES (PARA SISTEMA DE FIDELIDADE):
+CREATE TABLE IF NOT EXISTS clientes (
+    id BIGSERIAL PRIMARY KEY,
+    nome TEXT NOT NULL,
+    telefone TEXT NOT NULL UNIQUE,
+    endereco TEXT,
+    bairro TEXT,
+    geladeira TEXT,
+    total_pedidos INTEGER DEFAULT 0,
+    valor_total NUMERIC(10, 2) DEFAULT 0,
+    nivel_fidelidade TEXT DEFAULT 'Sem nível',
+    ultimo_pedido TIMESTAMPTZ,
+    primeiro_pedido TIMESTAMPTZ,
+    observacoes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Índice para busca rápida por telefone
+CREATE INDEX IF NOT EXISTS idx_clientes_telefone ON clientes(telefone);
+
+-- Trigger para atualizar updated_at automaticamente
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_clientes_updated_at BEFORE UPDATE ON clientes
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Políticas RLS (Row Level Security) para a tabela clientes:
+ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Permitir leitura pública para clientes" ON clientes
+    FOR SELECT USING (true);
+
+CREATE POLICY "Permitir inserção pública para clientes" ON clientes
+    FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Permitir atualização pública para clientes" ON clientes
+    FOR UPDATE USING (true);
+
 -- 1. COLUNAS PARA SISTEMA DE SEPARAÇÃO DE ITENS:
 ALTER TABLE entregas
 ADD COLUMN IF NOT EXISTS itens TEXT,
@@ -51,6 +96,8 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     
     <script>
         // DADOS E CONSTANTES GLOBAIS
@@ -59,7 +106,59 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
         const SUPABASE_URL = 'https://rwgkfpgzwplmhnpezvnw.supabase.co'; // CHAVE DO UTILIZADOR INSERIDA
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3Z2tmcGd6d3BsbWhucGV6dm53Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA3OTE5MDUsImV4cCI6MjA3NjM2NzkwNX0.CtuSkk_AJADg8CXqSuUsHncqVXdVTIazs37L-xKjIkY'; // CHAVE ANON REAL DO UTILIZADOR INSERIDA
         const SUPABASE_TABLE = 'entregas'; 
-        const SUPABASE_STORAGE_BUCKET = 'entregas-comprovantes'; 
+        const SUPABASE_STORAGE_BUCKET = 'entregas-comprovantes';
+        const SUPABASE_TABLE_CLIENTES = 'clientes'; // Nova tabela para clientes
+        
+        // --- SISTEMA DE FIDELIDADE ---
+        const FIDELIDADE_NIVEIS = {
+            'Sem nível': { 
+                nome: 'Sem nível',
+                pedidos: 0, 
+                valor: 0, 
+                cor: '#95a5a6',
+                badge: '🔘',
+                beneficios: []
+            },
+            'Prata': { 
+                nome: 'Prata',
+                pedidos: 10, 
+                valor: 1000, 
+                cor: '#95a5a6',
+                badge: '🥈',
+                beneficios: [
+                    '💰 Taxa de entrega grátis por 1 mês',
+                    '🎁 Item grátis em cada 5º pedido',
+                    '📊 5% de desconto em pedidos acima de R$ 50'
+                ]
+            },
+            'Ouro': { 
+                nome: 'Ouro',
+                pedidos: 15, 
+                valor: 2000, 
+                cor: '#f39c12',
+                badge: '🥇',
+                beneficios: [
+                    '💰 Taxa de entrega grátis por 2 meses',
+                    '🎁 Item grátis em cada 3º pedido',
+                    '📊 10% de desconto em pedidos acima de R$ 40',
+                    '🎉 Prioridade na entrega'
+                ]
+            },
+            'Diamante': { 
+                nome: 'Diamante',
+                pedidos: 20, 
+                valor: 3000, 
+                cor: '#3498db',
+                badge: '💎',
+                beneficios: [
+                    '💰 Taxa de entrega sempre grátis',
+                    '🎁 Item grátis em cada pedido',
+                    '📊 15% de desconto em todos os pedidos',
+                    '🎉 Prioridade máxima na entrega',
+                    '🎁 Brinde especial mensal'
+                ]
+            }
+        }; 
         
         // --- VARIÁVEIS DE CONEXÃO ---
         window.supabaseClient = null;
@@ -440,6 +539,1218 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
             }
         }
 
+        // --- FUNÇÕES DE FIDELIDADE ---
+        
+        // Calcula o nível de fidelidade do cliente
+        // CRITÉRIO DE UNICIDADE: Um cliente é identificado pelo TELEFONE (principal) ou NOME
+        // O telefone é o identificador principal porque é mais único e confiável
+        function calcularNivelFidelidade(telefone, nome) {
+            // Busca todas as entregas fechadas/completadas do cliente
+            // Usa TELEFONE como identificador principal, e NOME como fallback
+            const entregasCliente = todasEntregas.filter(e => {
+                // Remove caracteres não numéricos para comparação
+                const telefoneEntrega = e.telefone ? e.telefone.replace(/\D/g, '') : '';
+                const telefoneBusca = telefone ? telefone.replace(/\D/g, '') : '';
+                
+                // Prioriza telefone (mais confiável), depois nome
+                const telefoneMatch = telefoneEntrega && telefoneBusca && telefoneEntrega === telefoneBusca;
+                const nomeMatch = e.clienteNome && nome && e.clienteNome.toLowerCase().trim() === nome.toLowerCase().trim();
+                
+                // Retorna true se telefone OU nome corresponder
+                return telefoneMatch || nomeMatch;
+            }).filter(e => 
+                e.status === 'fechada' || 
+                e.status === 'concluida' || 
+                e.status === 'entregue'
+            );
+            
+            const totalPedidos = entregasCliente.length;
+            const valorTotal = entregasCliente.reduce((sum, e) => {
+                const valor = parseFloat(e.valorACobrarNumerico || e.valorNumerico || e.valor?.replace(/[^\d,.-]/g, '').replace(',', '.') || 0);
+                return sum + (isNaN(valor) ? 0 : valor);
+            }, 0);
+            
+            // Determina nível baseado em PEDIDOS E VALOR (precisa atingir ambos ou um deles)
+            let nivel = 'Sem nível';
+            let maiorNivel = 0;
+            
+            // Verifica por quantidade de pedidos
+            if (totalPedidos >= 20) {
+                nivel = 'Diamante';
+                maiorNivel = 4;
+            } else if (totalPedidos >= 15) {
+                nivel = 'Ouro';
+                maiorNivel = 3;
+            } else if (totalPedidos >= 10) {
+                nivel = 'Prata';
+                maiorNivel = 2;
+            }
+            
+            // Verifica por valor em R$
+            if (valorTotal >= 3000 && maiorNivel < 4) {
+                nivel = 'Diamante';
+                maiorNivel = 4;
+            } else if (valorTotal >= 2000 && maiorNivel < 3) {
+                if (nivel !== 'Ouro') nivel = 'Ouro';
+                maiorNivel = 3;
+            } else if (valorTotal >= 1000 && maiorNivel < 2) {
+                if (nivel === 'Sem nível') nivel = 'Prata';
+                maiorNivel = 2;
+            }
+            
+            return {
+                nivel: nivel,
+                totalPedidos: totalPedidos,
+                valorTotal: valorTotal,
+                proximoNivel: calcularProximoNivel(nivel, totalPedidos, valorTotal),
+                beneficios: FIDELIDADE_NIVEIS[nivel]?.beneficios || []
+            };
+        }
+        
+        // Calcula próximo nível e progresso
+        function calcularProximoNivel(nivelAtual, pedidos, valor) {
+            if (nivelAtual === 'Diamante') {
+                return null; // Já está no nível máximo
+            }
+            
+            const niveis = ['Sem nível', 'Prata', 'Ouro', 'Diamante'];
+            const indiceAtual = niveis.indexOf(nivelAtual);
+            const proximoNivelNome = niveis[indiceAtual + 1];
+            const proximoNivel = FIDELIDADE_NIVEIS[proximoNivelNome];
+            
+            if (!proximoNivel) return null;
+            
+            const pedidosFaltam = Math.max(0, proximoNivel.pedidos - pedidos);
+            const valorFalta = Math.max(0, proximoNivel.valor - valor);
+            
+            return {
+                nome: proximoNivelNome,
+                pedidosFaltam: pedidosFaltam,
+                valorFalta: valorFalta,
+                progressoPedidos: Math.min(100, (pedidos / proximoNivel.pedidos) * 100),
+                progressoValor: Math.min(100, (valor / proximoNivel.valor) * 100)
+            };
+        }
+        
+        // --- FUNÇÕES DE CLIENTES ---
+        
+        // Carrega lista de clientes do Supabase
+        async function carregarClientes() {
+            if (!window.supabaseClient) return;
+            
+            try {
+                const { data, error } = await window.supabaseClient
+                    .from(SUPABASE_TABLE_CLIENTES)
+                    .select('*')
+                    .order('valor_total', { ascending: false });
+                
+                if (error) {
+                    console.error('Erro ao carregar clientes:', error);
+                    return;
+                }
+                
+                // Atualiza estatísticas
+                atualizarEstatisticasClientes(data || []);
+                
+                // Renderiza lista de clientes
+                renderizarListaClientes(data || []);
+                
+            } catch (error) {
+                console.error('Erro ao carregar clientes:', error);
+            }
+        }
+        
+        // Atualiza estatísticas gerais
+        function atualizarEstatisticasClientes(clientes) {
+            const totalClientes = clientes.length;
+            const prata = clientes.filter(c => c.nivel_fidelidade === 'Prata').length;
+            const ouro = clientes.filter(c => c.nivel_fidelidade === 'Ouro').length;
+            const diamante = clientes.filter(c => c.nivel_fidelidade === 'Diamante').length;
+            const valorTotal = clientes.reduce((sum, c) => sum + (parseFloat(c.valor_total) || 0), 0);
+            
+            const statsHtml = `
+                <div style="background: var(--card-bg); padding: 15px; border-radius: 10px; text-align: center; border: 2px solid var(--border-color);">
+                    <div style="font-size: 24px; font-weight: bold; color: var(--text-primary);">${totalClientes}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Total de Clientes</div>
+                </div>
+                <div style="background: var(--card-bg); padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #95a5a6;">
+                    <div style="font-size: 24px; font-weight: bold; color: #95a5a6;">🥈 ${prata}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Prata</div>
+                </div>
+                <div style="background: var(--card-bg); padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #f39c12;">
+                    <div style="font-size: 24px; font-weight: bold; color: #f39c12;">🥇 ${ouro}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Ouro</div>
+                </div>
+                <div style="background: var(--card-bg); padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #3498db;">
+                    <div style="font-size: 24px; font-weight: bold; color: #3498db;">💎 ${diamante}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Diamante</div>
+                </div>
+                <div style="background: var(--card-bg); padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #28a745;">
+                    <div style="font-size: 24px; font-weight: bold; color: #28a745;">💰 R$ ${formatarMoeda(valorTotal)}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Valor Total</div>
+                </div>
+            `;
+            
+            const statsContainer = document.getElementById('estatisticasClientes');
+            if (statsContainer) statsContainer.innerHTML = statsHtml;
+        }
+        
+        // Renderiza lista de clientes
+        function renderizarListaClientes(clientes) {
+            const lista = document.getElementById('listaClientes');
+            if (!lista) return;
+            
+            if (clientes.length === 0) {
+                lista.innerHTML = '<div class="empty-state"><p>📭 Nenhum cliente cadastrado ainda.</p></div>';
+                return;
+            }
+            
+            lista.innerHTML = clientes.map(cliente => {
+                const fidelidade = calcularNivelFidelidade(cliente.telefone, cliente.nome);
+                const nivelInfo = FIDELIDADE_NIVEIS[fidelidade.nivel] || FIDELIDADE_NIVEIS['Sem nível'];
+                
+                return `
+                    <div class="entrega-card" style="cursor: pointer;" onclick="mostrarDetalhesCliente('${cliente.telefone}')">
+                        <div class="entrega-header">
+                            <div class="entrega-nome">
+                                ${cliente.nome}
+                                ${fidelidade.nivel !== 'Sem nível' ? `
+                                    <span style="background: ${nivelInfo.cor}; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-left: 10px;">
+                                        ${nivelInfo.badge} ${fidelidade.nivel}
+                                    </span>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        <div class="entrega-info">
+                            <strong>📞 Telefone:</strong> ${formatarTelefone(cliente.telefone)}
+                        </div>
+                        <div class="entrega-info">
+                            <strong>📍 Endereço:</strong> ${cliente.endereco || 'N/A'}, ${cliente.bairro || 'N/A'}
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color);">
+                            <div style="text-align: center;">
+                                <div style="font-size: 18px; font-weight: bold; color: var(--text-primary);">${cliente.total_pedidos || 0}</div>
+                                <div style="font-size: 11px; color: var(--text-secondary);">Pedidos</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 18px; font-weight: bold; color: #28a745;">R$ ${formatarMoeda(cliente.valor_total || 0)}</div>
+                                <div style="font-size: 11px; color: var(--text-secondary);">Valor Total</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 18px; font-weight: bold; color: ${nivelInfo.cor};">${nivelInfo.badge}</div>
+                                <div style="font-size: 11px; color: var(--text-secondary);">Nível</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Busca cliente específico por telefone (busca exata)
+        function buscarClientePorTelefone() {
+            const telefoneBusca = document.getElementById('buscarCliente')?.value.replace(/\D/g, '') || '';
+            
+            if (!telefoneBusca || telefoneBusca.length < 8) {
+                // Se a busca estiver vazia ou muito curta, mostra todos os clientes
+                carregarClientes();
+                return;
+            }
+            
+            // Busca EXATA por telefone nas entregas
+            const entregasCliente = todasEntregas.filter(e => {
+                const telefoneEntrega = e.telefone?.replace(/\D/g, '') || '';
+                return telefoneEntrega && telefoneEntrega.includes(telefoneBusca);
+            });
+            
+            if (entregasCliente.length === 0) {
+                document.getElementById('listaClientes').innerHTML = `
+                    <div class="empty-state">
+                        <p>📭 Nenhum cliente encontrado com o telefone informado.</p>
+                        <p style="font-size: 12px; margin-top: 10px;">Tente buscar apenas os últimos dígitos ou verifique se o telefone está correto.</p>
+                    </div>
+                `;
+                document.getElementById('estatisticasClientes').innerHTML = '';
+                return;
+            }
+            
+            // Agrupa por telefone (mesmo cliente pode ter entregas com telefone formatado diferente)
+            const clientesUnicos = {};
+            entregasCliente.forEach(entrega => {
+                const telefoneLimpo = entrega.telefone?.replace(/\D/g, '') || '';
+                const key = telefoneLimpo;
+                
+                if (!clientesUnicos[key]) {
+                    clientesUnicos[key] = {
+                        nome: entrega.clienteNome,
+                        telefone: entrega.telefone,
+                        endereco: entrega.endereco,
+                        bairro: entrega.bairro,
+                        geladeira: entrega.geladeira,
+                        total_pedidos: 0,
+                        valor_total: 0,
+                        entregas: []
+                    };
+                }
+                clientesUnicos[key].total_pedidos++;
+                clientesUnicos[key].entregas.push(entrega);
+                const valor = parseFloat(entrega.valorACobrarNumerico || entrega.valorNumerico || entrega.valor?.replace(/[^\d,.-]/g, '').replace(',', '.') || 0);
+                clientesUnicos[key].valor_total += (isNaN(valor) ? 0 : valor);
+            });
+            
+            const clientesArray = Object.values(clientesUnicos);
+            atualizarEstatisticasClienteIndividual(clientesArray[0], clientesArray[0].entregas);
+            renderizarListaClientes(clientesArray);
+        }
+        
+        // Limpa a busca e volta a mostrar todos
+        function limparBuscaCliente() {
+            document.getElementById('buscarCliente').value = '';
+            carregarClientes();
+        }
+        
+        // Formata telefone enquanto digita
+        function formatarTelefoneInput(input) {
+            let valor = input.value.replace(/\D/g, '');
+            if (valor.length > 11) valor = valor.substring(0, 11);
+            
+            if (valor.length > 10) {
+                valor = valor.replace(/^(\d{2})(\d{5})(\d{4}).*/, '($1) $2-$3');
+            } else if (valor.length > 6) {
+                valor = valor.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, '($1) $2-$3');
+            } else if (valor.length > 2) {
+                valor = valor.replace(/^(\d{2})(\d{0,5})/, '($1) $2');
+            } else {
+                valor = valor.replace(/^(\d*)/, '($1');
+            }
+            
+            input.value = valor;
+        }
+        
+        // Atualiza estatísticas para um cliente específico
+        function atualizarEstatisticasClienteIndividual(cliente, entregas) {
+            if (!cliente) return;
+            
+            const fidelidade = calcularNivelFidelidade(cliente.telefone, cliente.nome);
+            const nivelInfo = FIDELIDADE_NIVEIS[fidelidade.nivel] || FIDELIDADE_NIVEIS['Sem nível'];
+            
+            const entregasFechadas = entregas.filter(e => 
+                e.status === 'fechada' || e.status === 'concluida' || e.status === 'entregue'
+            );
+            const entregasPendentes = entregas.filter(e => 
+                e.status !== 'fechada' && e.status !== 'concluida' && e.status !== 'entregue' && e.status !== 'cancelada' && e.status !== 'falha'
+            );
+            
+            const statsHtml = `
+                <div style="background: var(--card-bg); padding: 15px; border-radius: 10px; text-align: center; border: 2px solid var(--border-color);">
+                    <div style="font-size: 18px; font-weight: bold; color: var(--text-primary); margin-bottom: 5px;">${cliente.nome}</div>
+                    <div style="font-size: 14px; color: var(--text-secondary);">${formatarTelefone(cliente.telefone)}</div>
+                </div>
+                <div style="background: ${nivelInfo.cor}20; border: 2px solid ${nivelInfo.cor}; padding: 15px; border-radius: 10px; text-align: center;">
+                    <div style="font-size: 24px; font-weight: bold; color: ${nivelInfo.cor};">${nivelInfo.badge}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Nível ${fidelidade.nivel}</div>
+                </div>
+                <div style="background: var(--card-bg); padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #28a745;">
+                    <div style="font-size: 24px; font-weight: bold; color: #28a745;">📦 ${entregasFechadas.length}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Entregas Concluídas</div>
+                </div>
+                <div style="background: var(--card-bg); padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #ffc107;">
+                    <div style="font-size: 24px; font-weight: bold; color: #ffc107;">⏳ ${entregasPendentes.length}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Entregas Pendentes</div>
+                </div>
+                <div style="background: var(--card-bg); padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #17a2b8;">
+                    <div style="font-size: 24px; font-weight: bold; color: #17a2b8;">💰 R$ ${formatarMoeda(fidelidade.valorTotal)}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">Valor Total</div>
+                </div>
+            `;
+            
+            const statsContainer = document.getElementById('estatisticasClientes');
+            if (statsContainer) statsContainer.innerHTML = statsHtml;
+        }
+        
+        // Exibe detalhes completos do cliente
+        function mostrarDetalhesCliente(telefone) {
+            const entregasCliente = todasEntregas.filter(e => 
+                e.telefone && e.telefone.replace(/\D/g, '') === telefone.replace(/\D/g, '')
+            );
+            
+            if (entregasCliente.length === 0) {
+                showMessageBox('⚠️', 'Cliente não encontrado nas entregas.');
+                return;
+            }
+            
+            const primeiraEntrega = entregasCliente[entregasCliente.length - 1]; // Mais antiga
+            const fidelidade = calcularNivelFidelidade(telefone, primeiraEntrega.clienteNome);
+            const nivelInfo = FIDELIDADE_NIVEIS[fidelidade.nivel] || FIDELIDADE_NIVEIS['Sem nível'];
+            
+            const entregasFechadas = entregasCliente.filter(e => 
+                e.status === 'fechada' || e.status === 'concluida' || e.status === 'entregue'
+            );
+            const entregasPendentes = entregasCliente.filter(e => 
+                e.status !== 'fechada' && e.status !== 'concluida' && e.status !== 'entregue' && e.status !== 'cancelada' && e.status !== 'falha'
+            );
+            const entregasCanceladas = entregasCliente.filter(e => 
+                e.status === 'cancelada' || e.status === 'falha'
+            );
+            
+            // Calcula ticket médio
+            const ticketMedio = entregasFechadas.length > 0 
+                ? fidelidade.valorTotal / entregasFechadas.length 
+                : 0;
+            
+            // Última entrega e primeira entrega
+            const ultimaEntrega = entregasFechadas[entregasFechadas.length - 1];
+            const primeiraEntregaFechada = entregasFechadas[0];
+            
+            let content = `
+                <h2 style="color: #d63031;">👤 ${primeiraEntrega.clienteNome}</h2>
+                
+                <div style="background: ${nivelInfo.cor}20; border: 2px solid ${nivelInfo.cor}; border-radius: 8px; padding: 15px; margin: 15px 0;">
+                    <p style="margin: 0; font-weight: bold; font-size: 18px; color: ${nivelInfo.cor};">
+                        ${nivelInfo.badge} Cliente ${fidelidade.nivel}
+                    </p>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px;">
+                        <div>
+                            <div style="font-size: 12px; color: #666;">📦 Total de Pedidos</div>
+                            <div style="font-size: 16px; font-weight: bold;">${fidelidade.totalPedidos}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #666;">💰 Valor Total</div>
+                            <div style="font-size: 16px; font-weight: bold; color: #28a745;">R$ ${formatarMoeda(fidelidade.valorTotal)}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #666;">📊 Ticket Médio</div>
+                            <div style="font-size: 16px; font-weight: bold;">R$ ${formatarMoeda(ticketMedio)}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #666;">✅ Concluídas</div>
+                            <div style="font-size: 16px; font-weight: bold; color: #28a745;">${entregasFechadas.length}</div>
+                        </div>
+                    </div>
+                    ${fidelidade.proximoNivel ? `
+                        <div style="margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.05); border-radius: 5px;">
+                            <strong style="font-size: 12px;">🎯 Próximo nível: ${fidelidade.proximoNivel.nome}</strong>
+                            <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                                Faltam ${fidelidade.proximoNivel.pedidosFaltam} pedidos ou R$ ${formatarMoeda(fidelidade.proximoNivel.valorFalta)}
+                            </div>
+                        </div>
+                    ` : ''}
+                    ${nivelInfo.beneficios && nivelInfo.beneficios.length > 0 ? `
+                        <div style="margin-top: 12px; font-size: 12px;">
+                            <strong>Benefícios Ativos:</strong>
+                            <ul style="margin: 8px 0 0 20px; padding: 0;">
+                                ${nivelInfo.beneficios.map(b => `<li style="margin: 4px 0;">${b}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                <div style="margin: 15px 0; display: flex; gap: 10px;">
+                    <button class="btn-primary" onclick="gerarPDFClienteModal('${telefone}')" style="flex: 1; padding: 10px; background: #dc3545;">
+                        📄 Gerar PDF do Histórico
+                    </button>
+                    <button class="btn-primary" onclick="exportarDadosClienteModal('${telefone}')" style="flex: 1; padding: 10px; background: #28a745;">
+                        📊 Exportar Dados (CSV)
+                    </button>
+                </div>
+                
+                <hr style="margin: 15px 0;">
+                <h4>📋 Informações de Contato</h4>
+                <p><strong>Telefone:</strong> ${formatarTelefone(primeiraEntrega.telefone)}</p>
+                <p><strong>Endereço:</strong> ${primeiraEntrega.endereco}</p>
+                <p><strong>Bairro:</strong> ${primeiraEntrega.bairro}</p>
+                <p><strong>Geladeira:</strong> ${primeiraEntrega.geladeira || 'N/A'}</p>
+                
+                <hr style="margin: 15px 0;">
+                <h4>📊 Estatísticas de Entregas</h4>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px;">
+                    <div style="background: var(--card-bg); padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #28a745;">
+                        <div style="font-size: 20px; font-weight: bold; color: #28a745;">${entregasFechadas.length}</div>
+                        <div style="font-size: 11px; color: #666;">✅ Concluídas</div>
+                    </div>
+                    <div style="background: var(--card-bg); padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #ffc107;">
+                        <div style="font-size: 20px; font-weight: bold; color: #ffc107;">${entregasPendentes.length}</div>
+                        <div style="font-size: 11px; color: #666;">⏳ Pendentes</div>
+                    </div>
+                    <div style="background: var(--card-bg); padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #dc3545;">
+                        <div style="font-size: 20px; font-weight: bold; color: #dc3545;">${entregasCanceladas.length}</div>
+                        <div style="font-size: 11px; color: #666;">❌ Canceladas</div>
+                    </div>
+                </div>
+                
+                ${ultimaEntrega ? `
+                    <p><strong>Última entrega:</strong> ${formatSupabaseDate(ultimaEntrega.finalizadoem || ultimaEntrega.finalizadoEm || ultimaEntrega.created_at)}</p>
+                ` : ''}
+                ${primeiraEntregaFechada ? `
+                    <p><strong>Primeira entrega:</strong> ${formatSupabaseDate(primeiraEntregaFechada.created_at)}</p>
+                ` : ''}
+                
+                <hr style="margin: 15px 0;">
+                <h4>📈 Gráficos e Visualizações</h4>
+                <div style="margin: 15px 0; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <canvas id="graficoEvolucaoCliente" width="400" height="150" style="max-width: 100%;"></canvas>
+                </div>
+                
+                <hr style="margin: 15px 0;">
+                <h4>📜 Histórico de Entregas (Últimas 15)</h4>
+                ${entregasFechadas.length > 0 ? `
+                    <div style="max-height: 400px; overflow-y: auto; margin-top: 10px;">
+                        ${entregasFechadas.slice(-15).reverse().map(e => {
+                            const statusCor = e.status === 'fechada' ? '#28a745' : e.status === 'pendente' ? '#ffc107' : '#dc3545';
+                            return `
+                                <div style="padding: 10px; margin: 5px 0; background: var(--card-bg); border-radius: 5px; border-left: 4px solid ${statusCor};">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong>${e.displayId || e.id}</strong> - ${formatSupabaseDate(e.finalizadoem || e.finalizadoEm || e.created_at)}
+                                            <br><small style="color: #666;">Valor: ${e.valorACobrar || e.valor || 'N/A'}</small>
+                                        </div>
+                                        <span style="font-size: 11px; padding: 4px 8px; background: ${statusCor}20; color: ${statusCor}; border-radius: 4px; font-weight: bold;">
+                                            ${e.status.toUpperCase()}
+                                        </span>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                        ${entregasFechadas.length > 15 ? `<p style="text-align: center; color: #666; font-size: 12px; margin-top: 10px;">... e mais ${entregasFechadas.length - 15} entregas</p>` : ''}
+                    </div>
+                ` : '<p style="color: #666; font-style: italic;">Nenhuma entrega concluída ainda.</p>'}
+            `;
+            
+            const modalConteudo = document.getElementById('modalConteudo');
+            if (modalConteudo) modalConteudo.innerHTML = content;
+            const modalDetalhes = document.getElementById('modalDetalhes');
+            if (modalDetalhes) modalDetalhes.classList.add('active');
+            
+            // Cria gráfico de evolução após o modal ser aberto
+            setTimeout(() => {
+                criarGraficoEvolucaoCliente(entregasFechadas);
+            }, 100);
+        }
+        
+        // Cria gráfico de evolução do cliente
+        function criarGraficoEvolucaoCliente(entregas) {
+            const canvas = document.getElementById('graficoEvolucaoCliente');
+            if (!canvas || !window.Chart || entregas.length === 0) return;
+            
+            // Ordena entregas por data
+            const entregasOrdenadas = [...entregas].sort((a, b) => {
+                const dataA = new Date(a.finalizadoem || a.finalizadoEm || a.created_at);
+                const dataB = new Date(b.finalizadoem || b.finalizadoEm || b.created_at);
+                return dataA - dataB;
+            });
+            
+            // Prepara dados para o gráfico
+            const labels = entregasOrdenadas.slice(-10).map(e => {
+                const data = new Date(e.finalizadoem || e.finalizadoEm || e.created_at);
+                return data.toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' });
+            });
+            
+            const valores = entregasOrdenadas.slice(-10).map(e => {
+                return parseFloat(e.valorACobrarNumerico || e.valorNumerico || e.valor?.replace(/[^\d,.-]/g, '').replace(',', '.') || 0);
+            });
+            
+            const ctx = canvas.getContext('2d');
+            
+            // Destroi gráfico anterior se existir
+            if (canvas.chart) {
+                canvas.chart.destroy();
+            }
+            
+            canvas.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Valor das Entregas (R$)',
+                        data: valores,
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Evolução das Entregas (Últimas 10)',
+                            font: {
+                                size: 14
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value.toFixed(2);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Funções wrapper para usar dados do modal atual
+        function gerarPDFClienteModal(telefone) {
+            const entregasCliente = todasEntregas.filter(e => 
+                e.telefone && e.telefone.replace(/\D/g, '') === telefone.replace(/\D/g, '')
+            );
+            
+            if (entregasCliente.length === 0) {
+                showMessageBox('⚠️', 'Cliente não encontrado nas entregas.');
+                return;
+            }
+            
+            const primeiraEntrega = entregasCliente[entregasCliente.length - 1];
+            const fidelidade = calcularNivelFidelidade(telefone, primeiraEntrega.clienteNome);
+            
+            gerarPDFCliente(primeiraEntrega, entregasCliente, fidelidade);
+        }
+        
+        function exportarDadosClienteModal(telefone) {
+            const entregasCliente = todasEntregas.filter(e => 
+                e.telefone && e.telefone.replace(/\D/g, '') === telefone.replace(/\D/g, '')
+            );
+            
+            if (entregasCliente.length === 0) {
+                showMessageBox('⚠️', 'Cliente não encontrado nas entregas.');
+                return;
+            }
+            
+            const primeiraEntrega = entregasCliente[entregasCliente.length - 1];
+            const fidelidade = calcularNivelFidelidade(telefone, primeiraEntrega.clienteNome);
+            
+            exportarDadosCliente(primeiraEntrega, entregasCliente, fidelidade);
+        }
+        
+        // Exporta dados do cliente para CSV
+        function exportarDadosCliente(cliente, entregas, fidelidade) {
+            try {
+                const entregasFechadas = entregas.filter(e => 
+                    e.status === 'fechada' || e.status === 'concluida' || e.status === 'entregue'
+                );
+                
+                // Cria CSV com BOM para Excel reconhecer corretamente
+                const BOM = '\uFEFF';
+                const nomeCliente = (cliente?.nome || 'N/A').toString();
+                const telefoneCliente = (cliente?.telefone || '').toString();
+                const enderecoCliente = (cliente?.endereco || 'N/A').toString();
+                const bairroCliente = (cliente?.bairro || 'N/A').toString();
+                const nivelFidelidade = (fidelidade?.nivel || 'N/A').toString();
+                const totalPedidos = (fidelidade?.totalPedidos || 0);
+                const valorTotal = (fidelidade?.valorTotal || 0);
+                
+                let csv = BOM + 'Dados do Cliente\n';
+                csv += `Nome,"${nomeCliente.replace(/,/g, ';').replace(/"/g, "'")}"\n`;
+                csv += `Telefone,"${formatarTelefone(telefoneCliente)}"\n`;
+                csv += `Endereço,"${enderecoCliente.replace(/"/g, "'")}, ${bairroCliente.replace(/"/g, "'")}"\n`;
+                csv += `Nível de Fidelidade,"${nivelFidelidade}"\n`;
+                csv += `Total de Pedidos,${totalPedidos}\n`;
+                csv += `Valor Total,"R$ ${formatarMoeda(valorTotal)}"\n`;
+                csv += `Ticket Médio,"R$ ${formatarMoeda(totalPedidos > 0 ? valorTotal / totalPedidos : 0)}"\n\n`;
+                
+                csv += 'Histórico de Entregas\n';
+                csv += 'ID,Data,Valor,Status\n';
+                
+                entregasFechadas.filter(e => e).forEach(e => {
+                    const dataEntrega = e?.finalizadoem || e?.finalizadoEm || e?.created_at || '';
+                    const data = dataEntrega ? formatSupabaseDate(dataEntrega) : 'N/A';
+                    const valor = ((e?.valorACobrar || e?.valor || 'N/A').toString() || 'N/A').replace(/"/g, "'");
+                    const id = ((e?.displayId || e?.id || 'N/A').toString() || 'N/A').replace(/"/g, "'");
+                    const status = ((e?.status || 'N/A').toString() || 'N/A').replace(/"/g, "'");
+                    csv += `"${id}","${data}","${valor}","${status}"\n`;
+                });
+                
+                // Cria blob com UTF-8
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                
+                const nomeArquivo = `Cliente_${nomeCliente.replace(/[^\w\s]/gi, '').replace(/\s/g, '_')}_${new Date().getTime()}.csv`;
+                
+                link.href = url;
+                link.download = nomeArquivo;
+                link.style.display = 'none';
+                
+                document.body.appendChild(link);
+                
+                // Força o download
+                if (document.createEvent) {
+                    const event = document.createEvent('MouseEvents');
+                    event.initEvent('click', true, true);
+                    link.dispatchEvent(event);
+                } else {
+                    link.click();
+                }
+                
+                // Remove o link após um tempo
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }, 100);
+                
+                setTimeout(() => {
+                    showMessageBox('✅ Sucesso', 'Dados exportados para CSV com sucesso! O download deve ter iniciado.');
+                }, 500);
+                
+            } catch (error) {
+                console.error('Erro ao exportar CSV:', error);
+                showMessageBox('❌ Erro', `Erro ao exportar CSV: ${error.message}. Verifique o console para mais detalhes.`);
+            }
+        }
+        
+        // --- FUNÇÕES DE RELATÓRIOS E EXPORTAÇÃO ---
+        
+        // Gera PDF do histórico do cliente
+        function gerarPDFCliente(cliente, entregas, fidelidade) {
+            try {
+                if (!window.jspdf) {
+                    showMessageBox('❌ Erro', 'Biblioteca jsPDF não encontrada. Aguarde alguns segundos e tente novamente.');
+                    return;
+                }
+                
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                const nivelInfo = FIDELIDADE_NIVEIS[fidelidade.nivel] || FIDELIDADE_NIVEIS['Sem nível'];
+                
+                // Cabeçalho
+                doc.setFontSize(20);
+                doc.setTextColor(214, 48, 49);
+                doc.text('Histórico de Cliente', 14, 20);
+                
+                // Dados do cliente
+                doc.setFontSize(14);
+                doc.setTextColor(0, 0, 0);
+                const nomeCliente = (cliente?.nome || 'N/A').toString();
+                const telefoneCliente = (cliente?.telefone || '').toString();
+                const enderecoCliente = (cliente?.endereco || 'N/A').toString();
+                const bairroCliente = (cliente?.bairro || 'N/A').toString();
+                
+                doc.text(`Cliente: ${nomeCliente}`, 14, 35);
+                doc.text(`Telefone: ${formatarTelefone(telefoneCliente)}`, 14, 42);
+                doc.text(`Endereço: ${enderecoCliente}, ${bairroCliente}`, 14, 49);
+                
+                // Informações de fidelidade
+                doc.setFontSize(12);
+                doc.setTextColor(nivelInfo.cor === '#95a5a6' ? 149 : nivelInfo.cor === '#f39c12' ? 243 : 52, 
+                                nivelInfo.cor === '#95a5a6' ? 165 : nivelInfo.cor === '#f39c12' ? 156 : 152, 
+                                nivelInfo.cor === '#95a5a6' ? 166 : nivelInfo.cor === '#f39c12' ? 18 : 219);
+                doc.text(`${nivelInfo.badge} Cliente ${fidelidade.nivel}`, 14, 58);
+                
+                doc.setTextColor(0, 0, 0);
+                doc.text(`Total de Pedidos: ${fidelidade.totalPedidos}`, 14, 65);
+                doc.text(`Valor Total: R$ ${formatarMoeda(fidelidade.valorTotal)}`, 14, 72);
+                doc.text(`Ticket Médio: R$ ${formatarMoeda(fidelidade.valorTotal / fidelidade.totalPedidos || 0)}`, 14, 79);
+                
+                // Histórico de entregas
+                let y = 90;
+                doc.setFontSize(12);
+                doc.text('Histórico de Entregas:', 14, y);
+                y += 10;
+                
+                doc.setFontSize(10);
+                const entregasOrdenadas = entregas.filter(e => e).slice(0, 20);
+                entregasOrdenadas.forEach((entrega, index) => {
+                    if (y > 270) {
+                        doc.addPage();
+                        y = 20;
+                    }
+                    const dataEntrega = entrega?.finalizadoem || entrega?.finalizadoEm || entrega?.created_at || '';
+                    const data = dataEntrega ? formatSupabaseDate(dataEntrega) : 'N/A';
+                    const valor = (entrega?.valorACobrar || entrega?.valor || 'N/A').toString();
+                    const idEntrega = (entrega?.displayId || entrega?.id || 'N/A').toString();
+                    doc.text(`${index + 1}. ${idEntrega} - ${data} - R$ ${valor}`, 14, y);
+                    y += 7;
+                });
+                
+                // Rodapé
+                const pageCount = doc.internal.pages.length - 1;
+                for (let i = 1; i <= pageCount; i++) {
+                    doc.setPage(i);
+                    doc.setFontSize(8);
+                    doc.setTextColor(128, 128, 128);
+                    doc.text(`Página ${i} de ${pageCount}`, 105, 285, { align: 'center' });
+                    doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 105, 290, { align: 'center' });
+                }
+                
+                // Salva o PDF
+                const nomeArquivoPDF = nomeCliente.replace(/[^\w\s]/gi, '').replace(/\s/g, '_') || 'Cliente';
+                const nomeArquivo = `Cliente_${nomeArquivoPDF}_${new Date().getTime()}.pdf`;
+                doc.save(nomeArquivo);
+                
+                // Aguarda um pouco antes de mostrar mensagem para garantir que o download iniciou
+                setTimeout(() => {
+                    showMessageBox('✅ Sucesso', 'PDF gerado com sucesso! O download deve ter iniciado.');
+                }, 500);
+                
+            } catch (error) {
+                console.error('Erro ao gerar PDF:', error);
+                showMessageBox('❌ Erro', `Erro ao gerar PDF: ${error.message}. Verifique o console para mais detalhes.`);
+            }
+        }
+        
+        // Mostra relatório de clientes VIP
+        function mostrarRelatorioClientesVip() {
+            // Coleta todos os clientes únicos
+            const clientesUnicos = {};
+            todasEntregas.filter(e => 
+                e.status === 'fechada' || e.status === 'concluida' || e.status === 'entregue'
+            ).forEach(entrega => {
+                const telefone = entrega.telefone?.replace(/\D/g, '') || '';
+                if (!telefone) return;
+                
+                if (!clientesUnicos[telefone]) {
+                    clientesUnicos[telefone] = {
+                        nome: entrega.clienteNome,
+                        telefone: entrega.telefone,
+                        total_pedidos: 0,
+                        valor_total: 0
+                    };
+                }
+                clientesUnicos[telefone].total_pedidos++;
+                const valor = parseFloat(entrega.valorACobrarNumerico || entrega.valorNumerico || entrega.valor?.replace(/[^\d,.-]/g, '').replace(',', '.') || 0);
+                clientesUnicos[telefone].valor_total += (isNaN(valor) ? 0 : valor);
+            });
+            
+            const clientesArray = Object.values(clientesUnicos);
+            clientesArray.forEach(c => {
+                const f = calcularNivelFidelidade(c.telefone, c.nome);
+                c.nivel = f.nivel;
+            });
+            
+            // Ordena por valor total (VIPs primeiro)
+            clientesArray.sort((a, b) => b.valor_total - a.valor_total);
+            
+            // Pega top 20
+            const top20 = clientesArray.slice(0, 20);
+            
+            let content = `
+                <h2 style="color: #d63031;">🥇 Top 20 Clientes VIP</h2>
+                <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
+                    Clientes ordenados por valor total acumulado
+                </p>
+                <div style="max-height: 500px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <thead>
+                            <tr style="background: var(--card-bg); border-bottom: 2px solid var(--border-color);">
+                                <th style="padding: 10px; text-align: left;">Rank</th>
+                                <th style="padding: 10px; text-align: left;">Cliente</th>
+                                <th style="padding: 10px; text-align: left;">Telefone</th>
+                                <th style="padding: 10px; text-align: center;">Nível</th>
+                                <th style="padding: 10px; text-align: right;">Pedidos</th>
+                                <th style="padding: 10px; text-align: right;">Valor Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${top20.map((cliente, index) => {
+                                const fidelidade = calcularNivelFidelidade(cliente.telefone, cliente.nome);
+                                const nivelInfo = FIDELIDADE_NIVEIS[fidelidade.nivel] || FIDELIDADE_NIVEIS['Sem nível'];
+                                return `
+                                    <tr style="border-bottom: 1px solid var(--border-color); ${index < 3 ? 'background: rgba(255, 215, 0, 0.1);' : ''}">
+                                        <td style="padding: 8px; font-weight: bold; color: ${index === 0 ? '#f39c12' : index === 1 ? '#95a5a6' : index === 2 ? '#cd7f32' : 'inherit'};">${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}</td>
+                                        <td style="padding: 8px;">${cliente.nome}</td>
+                                        <td style="padding: 8px;">${formatarTelefone(cliente.telefone)}</td>
+                                        <td style="padding: 8px; text-align: center;">
+                                            <span style="background: ${nivelInfo.cor}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 10px; font-weight: bold;">
+                                                ${nivelInfo.badge} ${fidelidade.nivel}
+                                            </span>
+                                        </td>
+                                        <td style="padding: 8px; text-align: right;">${fidelidade.totalPedidos}</td>
+                                        <td style="padding: 8px; text-align: right; font-weight: bold; color: #28a745;">R$ ${formatarMoeda(cliente.valor_total)}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            const modalConteudo = document.getElementById('modalConteudo');
+            if (modalConteudo) modalConteudo.innerHTML = content;
+            const modalDetalhes = document.getElementById('modalDetalhes');
+            if (modalDetalhes) modalDetalhes.classList.add('active');
+        }
+        
+        // Mostra relatório de clientes próximos de subir de nível
+        function mostrarRelatorioProximosNiveis() {
+            const clientesUnicos = {};
+            todasEntregas.filter(e => 
+                e.status === 'fechada' || e.status === 'concluida' || e.status === 'entregue'
+            ).forEach(entrega => {
+                const telefone = entrega.telefone?.replace(/\D/g, '') || '';
+                if (!telefone) return;
+                
+                if (!clientesUnicos[telefone]) {
+                    clientesUnicos[telefone] = {
+                        nome: entrega.clienteNome,
+                        telefone: entrega.telefone,
+                        total_pedidos: 0,
+                        valor_total: 0
+                    };
+                }
+                clientesUnicos[telefone].total_pedidos++;
+                const valor = parseFloat(entrega.valorACobrarNumerico || entrega.valorNumerico || entrega.valor?.replace(/[^\d,.-]/g, '').replace(',', '.') || 0);
+                clientesUnicos[telefone].valor_total += (isNaN(valor) ? 0 : valor);
+            });
+            
+            const clientesComProximoNivel = Object.values(clientesUnicos)
+                .map(c => {
+                    const f = calcularNivelFidelidade(c.telefone, c.nome);
+                    if (f.proximoNivel) {
+                        return {
+                            ...c,
+                            nivelAtual: f.nivel,
+                            proximoNivel: f.proximoNivel,
+                            totalPedidos: f.totalPedidos,
+                            valorTotal: f.valorTotal
+                        };
+                    }
+                    return null;
+                })
+                .filter(c => c !== null)
+                .sort((a, b) => {
+                    // Ordena por quem está mais próximo (menos pedidos ou valor faltando)
+                    const progressoA = (a.totalPedidos / a.proximoNivel.pedidosFaltam) + (a.valorTotal / a.proximoNivel.valorFalta);
+                    const progressoB = (b.totalPedidos / b.proximoNivel.pedidosFaltam) + (b.valorTotal / b.proximoNivel.valorFalta);
+                    return progressoB - progressoA;
+                });
+            
+            let content = `
+                <h2 style="color: #d63031;">🎯 Clientes Próximos de Subir de Nível</h2>
+                <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
+                    Clientes que estão próximos de alcançar o próximo nível de fidelidade
+                </p>
+                <div style="max-height: 500px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <thead>
+                            <tr style="background: var(--card-bg); border-bottom: 2px solid var(--border-color);">
+                                <th style="padding: 10px; text-align: left;">Cliente</th>
+                                <th style="padding: 10px; text-align: left;">Telefone</th>
+                                <th style="padding: 10px; text-align: center;">Nível Atual</th>
+                                <th style="padding: 10px; text-align: center;">Próximo Nível</th>
+                                <th style="padding: 10px; text-align: right;">Faltam</th>
+                                <th style="padding: 10px; text-align: right;">Progresso</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${clientesComProximoNivel.map(cliente => {
+                                const nivelAtualInfo = FIDELIDADE_NIVEIS[cliente.nivelAtual] || FIDELIDADE_NIVEIS['Sem nível'];
+                                const proximoNivelInfo = FIDELIDADE_NIVEIS[cliente.proximoNivel.nome] || FIDELIDADE_NIVEIS['Sem nível'];
+                                const progresso = Math.min(100, (cliente.totalPedidos / (cliente.proximoNivel.pedidosFaltam + cliente.totalPedidos)) * 100);
+                                return `
+                                    <tr style="border-bottom: 1px solid var(--border-color);">
+                                        <td style="padding: 8px;">${cliente.nome}</td>
+                                        <td style="padding: 8px;">${formatarTelefone(cliente.telefone)}</td>
+                                        <td style="padding: 8px; text-align: center;">
+                                            <span style="background: ${nivelAtualInfo.cor}; color: white; padding: 3px 8px; border-radius: 10px; font-size: 10px;">
+                                                ${nivelAtualInfo.badge} ${cliente.nivelAtual}
+                                            </span>
+                                        </td>
+                                        <td style="padding: 8px; text-align: center;">
+                                            <span style="background: ${proximoNivelInfo.cor}20; color: ${proximoNivelInfo.cor}; padding: 3px 8px; border-radius: 10px; font-size: 10px; border: 1px solid ${proximoNivelInfo.cor};">
+                                                ${proximoNivelInfo.badge} ${cliente.proximoNivel.nome}
+                                            </span>
+                                        </td>
+                                        <td style="padding: 8px; text-align: right;">
+                                            ${cliente.proximoNivel.pedidosFaltam} pedidos<br>
+                                            <small>ou R$ ${formatarMoeda(cliente.proximoNivel.valorFalta)}</small>
+                                        </td>
+                                        <td style="padding: 8px; text-align: right;">
+                                            <div style="width: 100px; background: #e0e0e0; border-radius: 10px; height: 20px; margin: 0 auto;">
+                                                <div style="width: ${progresso}%; background: ${proximoNivelInfo.cor}; height: 20px; border-radius: 10px; text-align: center; line-height: 20px; font-size: 10px; color: white;">
+                                                    ${Math.round(progresso)}%
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            const modalConteudo = document.getElementById('modalConteudo');
+            if (modalConteudo) modalConteudo.innerHTML = content;
+            const modalDetalhes = document.getElementById('modalDetalhes');
+            if (modalDetalhes) modalDetalhes.classList.add('active');
+        }
+        
+        // Mostra relatório de clientes "esfriando" (sem pedir há muito tempo)
+        function mostrarRelatorioClientesFrios() {
+            const clientesUnicos = {};
+            todasEntregas.forEach(entrega => {
+                const telefone = entrega.telefone?.replace(/\D/g, '') || '';
+                if (!telefone) return;
+                
+                if (!clientesUnicos[telefone]) {
+                    clientesUnicos[telefone] = {
+                        nome: entrega.clienteNome,
+                        telefone: entrega.telefone,
+                        ultimaEntrega: null,
+                        total_pedidos: 0
+                    };
+                }
+                clientesUnicos[telefone].total_pedidos++;
+                
+                // Pega a data da última entrega
+                const dataEntrega = entrega.finalizadoem || entrega.finalizadoEm || entrega.created_at;
+                if (dataEntrega) {
+                    const dataEntregaObj = new Date(dataEntrega);
+                    if (!clientesUnicos[telefone].ultimaEntrega || dataEntregaObj > new Date(clientesUnicos[telefone].ultimaEntrega)) {
+                        clientesUnicos[telefone].ultimaEntrega = dataEntrega;
+                    }
+                }
+            });
+            
+            const hoje = new Date();
+            const clientesFrios = Object.values(clientesUnicos)
+                .filter(c => {
+                    if (!c.ultimaEntrega) return true;
+                    const ultimaData = new Date(c.ultimaEntrega);
+                    const diasDesdeUltima = Math.floor((hoje - ultimaData) / (1000 * 60 * 60 * 24));
+                    return diasDesdeUltima >= 15; // Sem pedir há 15+ dias
+                })
+                .map(c => {
+                    const diasDesdeUltima = c.ultimaEntrega 
+                        ? Math.floor((hoje - new Date(c.ultimaEntrega)) / (1000 * 60 * 60 * 24))
+                        : 999;
+                    return { ...c, diasDesdeUltima };
+                })
+                .sort((a, b) => b.diasDesdeUltima - a.diasDesdeUltima)
+                .slice(0, 30); // Top 30 mais "frios"
+            
+            let content = `
+                <h2 style="color: #d63031;">❄️ Clientes "Esfriando" (Sem Pedir há 15+ dias)</h2>
+                <p style="font-size: 12px; color: #666; margin-bottom: 15px;">
+                    Clientes que não fazem pedidos há mais de 15 dias - oportunidade de reativação
+                </p>
+                <div style="max-height: 500px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <thead>
+                            <tr style="background: var(--card-bg); border-bottom: 2px solid var(--border-color);">
+                                <th style="padding: 10px; text-align: left;">Cliente</th>
+                                <th style="padding: 10px; text-align: left;">Telefone</th>
+                                <th style="padding: 10px; text-align: right;">Total Pedidos</th>
+                                <th style="padding: 10px; text-align: center;">Última Entrega</th>
+                                <th style="padding: 10px; text-align: right;">Dias Sem Pedir</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${clientesFrios.map(cliente => {
+                                const fidelidade = calcularNivelFidelidade(cliente.telefone, cliente.nome);
+                                const nivelInfo = FIDELIDADE_NIVEIS[fidelidade.nivel] || FIDELIDADE_NIVEIS['Sem nível'];
+                                const corDias = cliente.diasDesdeUltima >= 90 ? '#dc3545' : cliente.diasDesdeUltima >= 60 ? '#ffc107' : '#17a2b8';
+                                return `
+                                    <tr style="border-bottom: 1px solid var(--border-color);">
+                                        <td style="padding: 8px;">
+                                            ${cliente.nome}
+                                            ${fidelidade.nivel !== 'Sem nível' ? `<br><small style="color: ${nivelInfo.cor};">${nivelInfo.badge} ${fidelidade.nivel}</small>` : ''}
+                                        </td>
+                                        <td style="padding: 8px;">${formatarTelefone(cliente.telefone)}</td>
+                                        <td style="padding: 8px; text-align: right;">${cliente.total_pedidos}</td>
+                                        <td style="padding: 8px; text-align: center;">
+                                            ${cliente.ultimaEntrega ? formatSupabaseDate(cliente.ultimaEntrega) : 'Nunca'}
+                                        </td>
+                                        <td style="padding: 8px; text-align: right; font-weight: bold; color: ${corDias};">
+                                            ${cliente.diasDesdeUltima === 999 ? 'N/A' : cliente.diasDesdeUltima + ' dias'}
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            const modalConteudo = document.getElementById('modalConteudo');
+            if (modalConteudo) modalConteudo.innerHTML = content;
+            const modalDetalhes = document.getElementById('modalDetalhes');
+            if (modalDetalhes) modalDetalhes.classList.add('active');
+        }
+        
+        // Mostra gráfico de distribuição de fidelidade
+        function mostrarGraficoFidelidade() {
+            const clientesUnicos = {};
+            todasEntregas.filter(e => 
+                e.status === 'fechada' || e.status === 'concluida' || e.status === 'entregue'
+            ).forEach(entrega => {
+                const telefone = entrega.telefone?.replace(/\D/g, '') || '';
+                if (!telefone) return;
+                
+                if (!clientesUnicos[telefone]) {
+                    clientesUnicos[telefone] = {
+                        nome: entrega.clienteNome,
+                        telefone: entrega.telefone,
+                        total_pedidos: 0,
+                        valor_total: 0
+                    };
+                }
+                clientesUnicos[telefone].total_pedidos++;
+                const valor = parseFloat(entrega.valorACobrarNumerico || entrega.valorNumerico || entrega.valor?.replace(/[^\d,.-]/g, '').replace(',', '.') || 0);
+                clientesUnicos[telefone].valor_total += (isNaN(valor) ? 0 : valor);
+            });
+            
+            const contadores = {
+                'Sem nível': 0,
+                'Prata': 0,
+                'Ouro': 0,
+                'Diamante': 0
+            };
+            
+            Object.values(clientesUnicos).forEach(c => {
+                const f = calcularNivelFidelidade(c.telefone, c.nome);
+                contadores[f.nivel] = (contadores[f.nivel] || 0) + 1;
+            });
+            
+            let content = `
+                <h2 style="color: #d63031;">📈 Distribuição de Níveis de Fidelidade</h2>
+                <div style="margin: 20px 0;">
+                    <canvas id="graficoFidelidade" width="400" height="200"></canvas>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 20px;">
+                    <div style="background: #95a5a620; padding: 15px; border-radius: 8px; border: 2px solid #95a5a6; text-align: center;">
+                        <div style="font-size: 24px; font-weight: bold; color: #95a5a6;">🥈 ${contadores['Prata']}</div>
+                        <div style="font-size: 12px; color: #666;">Prata</div>
+                    </div>
+                    <div style="background: #f39c1220; padding: 15px; border-radius: 8px; border: 2px solid #f39c12; text-align: center;">
+                        <div style="font-size: 24px; font-weight: bold; color: #f39c12;">🥇 ${contadores['Ouro']}</div>
+                        <div style="font-size: 12px; color: #666;">Ouro</div>
+                    </div>
+                    <div style="background: #3498db20; padding: 15px; border-radius: 8px; border: 2px solid #3498db; text-align: center;">
+                        <div style="font-size: 24px; font-weight: bold; color: #3498db;">💎 ${contadores['Diamante']}</div>
+                        <div style="font-size: 12px; color: #666;">Diamante</div>
+                    </div>
+                    <div style="background: var(--card-bg); padding: 15px; border-radius: 8px; border: 2px solid var(--border-color); text-align: center;">
+                        <div style="font-size: 24px; font-weight: bold;">🔘 ${contadores['Sem nível']}</div>
+                        <div style="font-size: 12px; color: #666;">Sem Nível</div>
+                    </div>
+                </div>
+            `;
+            
+            const modalConteudo = document.getElementById('modalConteudo');
+            if (modalConteudo) modalConteudo.innerHTML = content;
+            const modalDetalhes = document.getElementById('modalDetalhes');
+            if (modalDetalhes) modalDetalhes.classList.add('active');
+            
+            // Cria o gráfico após o modal ser aberto
+            setTimeout(() => {
+                const canvas = document.getElementById('graficoFidelidade');
+                if (canvas && window.Chart) {
+                    const ctx = canvas.getContext('2d');
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Prata', 'Ouro', 'Diamante', 'Sem Nível'],
+                            datasets: [{
+                                data: [contadores['Prata'], contadores['Ouro'], contadores['Diamante'], contadores['Sem nível']],
+                                backgroundColor: ['#95a5a6', '#f39c12', '#3498db', '#95a5a6'],
+                                borderWidth: 2,
+                                borderColor: '#fff'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom'
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Clientes por Nível de Fidelidade'
+                                }
+                            }
+                        }
+                    });
+                }
+            }, 100);
+        }
+        
+        // Expor funções globalmente
+        window.buscarClientePorTelefone = buscarClientePorTelefone;
+        window.limparBuscaCliente = limparBuscaCliente;
+        window.formatarTelefoneInput = formatarTelefoneInput;
+        window.mostrarDetalhesCliente = mostrarDetalhesCliente;
+        window.gerarPDFCliente = gerarPDFCliente;
+        window.mostrarRelatorioClientesVip = mostrarRelatorioClientesVip;
+        window.mostrarRelatorioProximosNiveis = mostrarRelatorioProximosNiveis;
+        window.mostrarRelatorioClientesFrios = mostrarRelatorioClientesFrios;
+        window.mostrarGraficoFidelidade = mostrarGraficoFidelidade;
+        window.exportarDadosCliente = exportarDadosCliente;
+        window.gerarPDFClienteModal = gerarPDFClienteModal;
+        window.exportarDadosClienteModal = exportarDadosClienteModal;
+        
+        // Aplica benefícios de fidelidade (desconto, taxa grátis, etc)
+        function aplicarBeneficiosFidelidade(nivelFidelidade, valorPedido, taxaEntrega) {
+            const nivel = FIDELIDADE_NIVEIS[nivelFidelidade.nivel];
+            if (!nivel || nivelFidelidade.nivel === 'Sem nível') {
+                return {
+                    valorOriginal: valorPedido,
+                    taxaOriginal: taxaEntrega,
+                    desconto: 0,
+                    taxaDesconto: 0,
+                    valorFinal: valorPedido,
+                    taxaFinal: taxaEntrega,
+                    totalFinal: valorPedido + taxaEntrega,
+                    beneficiosAplicados: []
+                };
+            }
+            
+            let desconto = 0;
+            let taxaDesconto = 0;
+            const beneficiosAplicados = [];
+            
+            // Aplica desconto baseado no nível
+            if (nivelFidelidade.nivel === 'Diamante') {
+                desconto = valorPedido * 0.15; // 15% de desconto
+                taxaDesconto = taxaEntrega; // Taxa sempre grátis
+                beneficiosAplicados.push('15% de desconto aplicado');
+                beneficiosAplicados.push('Taxa de entrega grátis');
+            } else if (nivelFidelidade.nivel === 'Ouro') {
+                if (valorPedido >= 40) {
+                    desconto = valorPedido * 0.10; // 10% de desconto
+                    beneficiosAplicados.push('10% de desconto aplicado');
+                }
+                // Taxa grátis por 2 meses (precisa verificar data do último pedido)
+                // Por enquanto, vamos aplicar sempre no Ouro e Diamante
+                taxaDesconto = taxaEntrega;
+                beneficiosAplicados.push('Taxa de entrega grátis');
+            } else if (nivelFidelidade.nivel === 'Prata') {
+                if (valorPedido >= 50) {
+                    desconto = valorPedido * 0.05; // 5% de desconto
+                    beneficiosAplicados.push('5% de desconto aplicado');
+                }
+                // Taxa grátis por 1 mês (verificar data)
+                taxaDesconto = taxaEntrega;
+                beneficiosAplicados.push('Taxa de entrega grátis');
+            }
+            
+            const valorFinal = Math.max(0, valorPedido - desconto);
+            const taxaFinal = Math.max(0, taxaEntrega - taxaDesconto);
+            
+            return {
+                valorOriginal: valorPedido,
+                taxaOriginal: taxaEntrega,
+                desconto: desconto,
+                taxaDesconto: taxaDesconto,
+                valorFinal: valorFinal,
+                taxaFinal: taxaFinal,
+                totalFinal: valorFinal + taxaFinal,
+                beneficiosAplicados: beneficiosAplicados
+            };
+        }
+        
         // Função de inicialização principal
         window.init = async function() {
             initializeModalElements();
@@ -457,7 +1768,12 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
             if (valorRecebidoInput) { valorRecebidoInput.addEventListener('input', () => calcularTroco(null)); }
             
             // Atualiza apenas uma vez na inicialização; demais updates virão do Realtime
-            atualizarTelas(); 
+            atualizarTelas();
+            
+            // Carrega clientes se estiver na tela de clientes
+            if (document.getElementById('screenClientes') && document.getElementById('screenClientes').style.display !== 'none') {
+                carregarClientes();
+            }
         };
 
         // Função para carregar colaboradores do Supabase
@@ -834,13 +2150,19 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
                 itens = [];
             }
             
+            // Calcula nível de fidelidade do cliente
+            const fidelidade = calcularNivelFidelidade(e.telefone, e.clienteNome);
+            const nivelInfo = FIDELIDADE_NIVEIS[fidelidade.nivel] || FIDELIDADE_NIVEIS['Sem nível'];
+            const fidelidadeBadge = fidelidade.nivel !== 'Sem nível' 
+                ? `<span class="fidelidade-badge" style="background: ${nivelInfo.cor}; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; margin-left: 5px;">${nivelInfo.badge} ${fidelidade.nivel}</span>`
+                : '';
             const urgenteBadge = e.urgente === 'Sim' ? '<span class="urgente-badge">⚠️ URGENTE</span>' : '';
             
             return `
                 <div class="entrega-card ${e.urgente === 'Sim' ? 'urgent-card' : ''}">
                     <div class="entrega-header">
                         <div class="entrega-nome">
-                            ${e.displayId} - ${e.clienteNome} ${urgenteBadge}
+                            ${e.displayId} - ${e.clienteNome} ${fidelidadeBadge} ${urgenteBadge}
                             <span class="badge-itens">${itens.length} itens</span>
                         </div>
                         <span class="status-badge" style="background: #ffc107; color: #000;">
@@ -1287,7 +2609,7 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
                 console.log(`[Supabase] Dados de entregas carregados. Total: ${todasEntregas.length}`);
                 
                 // Atualiza todas as telas APÓS recarregar os dados do Supabase
-                atualizarTelas(); 
+                atualizarTelas();
 
                 // 3. Configura o listener Realtime
                 realtimeChannel = window.supabaseClient.channel('public:entregas')
@@ -2547,12 +3869,39 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
              const hasData = (prop) => entrega[prop] && entrega[prop].toString().toLowerCase() !== 'n/a';
              const formatIfData = (prop) => hasData(prop) ? formatSupabaseDate(entrega[prop]) : 'N/A';
 
+             // Calcula nível de fidelidade
+             const fidelidade = calcularNivelFidelidade(entrega.telefone, entrega.clienteNome);
+             const nivelInfo = FIDELIDADE_NIVEIS[fidelidade.nivel] || FIDELIDADE_NIVEIS['Sem nível'];
+             
              let content = `
                  <h2 style="color: #d63031;">Detalhes da Entrega ${entrega.displayId || entrega.id}</h2>
                  <p><strong>Status:</strong> <span class="status-badge status-${entrega.status.replace(/\s/g, '').toLowerCase()}">${entrega.status.toUpperCase()}</span></p>
                  <hr style="margin: 15px 0;">
                  <h4>Cliente e Destino</h4>
                  <p><strong>Cliente:</strong> ${entrega.clienteNome}</p>
+                 ${fidelidade.nivel !== 'Sem nível' ? `
+                 <div style="background: ${nivelInfo.cor}20; border: 2px solid ${nivelInfo.cor}; border-radius: 8px; padding: 10px; margin: 10px 0;">
+                     <p style="margin: 0; font-weight: bold; color: ${nivelInfo.cor};">
+                         ${nivelInfo.badge} <strong>Cliente ${fidelidade.nivel}</strong>
+                     </p>
+                     <p style="margin: 5px 0 0 0; font-size: 12px;">
+                         📦 ${fidelidade.totalPedidos} pedidos | 💰 R$ ${formatarMoeda(fidelidade.valorTotal)}
+                     </p>
+                     ${fidelidade.proximoNivel ? `
+                         <p style="margin: 5px 0 0 0; font-size: 11px; color: #666;">
+                             Próximo nível: ${fidelidade.proximoNivel.nome} (${fidelidade.proximoNivel.pedidosFaltam} pedidos ou R$ ${formatarMoeda(fidelidade.proximoNivel.valorFalta)})
+                         </p>
+                     ` : ''}
+                     ${nivelInfo.beneficios && nivelInfo.beneficios.length > 0 ? `
+                         <div style="margin-top: 8px; font-size: 11px;">
+                             <strong>Benefícios:</strong>
+                             <ul style="margin: 5px 0; padding-left: 20px;">
+                                 ${nivelInfo.beneficios.map(b => `<li>${b}</li>`).join('')}
+                             </ul>
+                         </div>
+                     ` : ''}
+                 </div>
+                 ` : ''}
                  <p><strong>Endereço:</strong> ${entrega.endereco}</p>
                  <p><strong>Bairro:</strong> ${entrega.bairro}</p>
                  <p><strong>Telefone:</strong> ${formatarTelefone(entrega.telefone)}</p>
@@ -2583,6 +3932,24 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
                  
                  ${(entrega.conferidoem && entrega.conferidoem.toString().toLowerCase() !== 'n/a') || (entrega.conferidoEm && entrega.conferidoEm.toString().toLowerCase() !== 'n/a')
                     ? `<p><strong>Conferido em:</strong> ${formatSupabaseDate(entrega.conferidoem || entrega.conferidoEm)}</p>`
+                    : ``}
+                 <hr style="margin: 15px 0;">
+                 
+                 <h4>Timeline</h4>
+                 ${entrega.entregador 
+                    ? `<p><strong>Entregador:</strong> ${entrega.entregador}</p>` 
+                    : `<p><strong>Entregador:</strong> Aguardando Atribuição</p>`}
+                 
+                 ${hasData('saiuEm')
+                    ? `<p><strong>Saiu em:</strong> ${formatSupabaseDate(entrega.saiuEm)}</p>` 
+                    : ``}
+
+                 ${hasData('finalizadoem') || hasData('finalizadoEm')
+                    ? `<p><strong>Entregue em:</strong> ${formatSupabaseDate(entrega.finalizadoem || entrega.finalizadoEm)}</p>`
+                    : ``}
+                    
+                 ${hasData('observacao') 
+                    ? `<p><strong>Observações (Entregador):</strong> ${entrega.observacao}</p>` 
                     : ``}
                  <hr style="margin: 15px 0;">
              `;
@@ -3985,6 +5352,9 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
                      <button class="role-btn" onclick="mostrarLogin('fiscal')">
                         📊 GESTÃO (ADM)
                     </button>
+                    <button class="role-btn" onclick="mostrarTela('screenClientes')" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        👥 CLIENTES & FIDELIDADE
+                    </button>
                 </div>
 
                 <div id="screenLogin" class="screen">
@@ -4332,6 +5702,52 @@ INSERT INTO colaboradores (nome, senha, funcoes, telefone, pontos) VALUES
                     </div>
                     
                     <button class="btn-voltar" onclick="logout()">← Sair</button>
+                </div>
+
+                <!-- NOVA TELA: CLIENTES & FIDELIDADE -->
+                <div id="screenClientes" class="screen">
+                    <h2>👥 Clientes & Fidelidade</h2>
+                    
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="tel" id="buscarCliente" placeholder="🔍 Digite o telefone do cliente (ex: 66999999999)" 
+                                   style="flex: 1; padding: 12px; border: 2px solid var(--border-color); border-radius: 8px; font-size: 16px;"
+                                   oninput="formatarTelefoneInput(this); buscarClientePorTelefone()"
+                                   maxlength="15">
+                            <button class="btn-primary" onclick="limparBuscaCliente()" style="padding: 12px 20px;">Limpar</button>
+                        </div>
+                        <p style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
+                            💡 Busque pelo telefone (com ou sem formatação). A busca encontra todas as entregas do cliente.
+                        </p>
+                    </div>
+                    
+                    <div id="estatisticasClientes" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                        <!-- Será preenchido dinamicamente -->
+                    </div>
+                    
+                    <div id="listaClientes" style="display: grid; gap: 15px;">
+                        <!-- Será preenchido dinamicamente -->
+                    </div>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: var(--card-bg); border-radius: 10px; border: 2px solid var(--border-color);">
+                        <h3 style="margin-top: 0;">📊 Relatórios de Fidelidade</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                            <button class="btn-primary" onclick="mostrarRelatorioClientesVip()" style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);">
+                                🥇 Clientes VIP
+                            </button>
+                            <button class="btn-primary" onclick="mostrarRelatorioProximosNiveis()" style="background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);">
+                                🎯 Próximos Níveis
+                            </button>
+                            <button class="btn-primary" onclick="mostrarRelatorioClientesFrios()" style="background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);">
+                                ❄️ Clientes "Esfriando"
+                            </button>
+                            <button class="btn-primary" onclick="mostrarGraficoFidelidade()" style="background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);">
+                                📈 Gráfico de Fidelidade
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <button class="btn-voltar" onclick="voltarInicio()">🚪 Sair</button>
                 </div>
             </div>
         </div>
