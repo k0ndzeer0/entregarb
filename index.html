@@ -136,6 +136,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3Z2tmcGd6d3BsbWhucGV6dm53Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA3OTE5MDUsImV4cCI6MjA3NjM2NzkwNX0.CtuSkk_AJADg8CXqSuUsHncqVXdVTIazs37L-xKjIkY'; // CHAVE ANON REAL DO UTILIZADOR INSERIDA
         const SUPABASE_TABLE = 'entregas'; 
         const SUPABASE_STORAGE_BUCKET = 'entregas-comprovantes';
+        const SUPABASE_STORAGE_BUCKET_TROCAS = 'trocas-notas-fiscais'; // Bucket para notas fiscais de trocas
         const SUPABASE_TABLE_CLIENTES = 'clientes'; // Nova tabela para clientes
         const SUPABASE_TABLE_LOGS = 'logs_sistema'; // Tabela de logs
         const SUPABASE_TABLE_PRODUTOS_SEM_CADASTRO = 'produtos_sem_cadastro'; // Produtos sem cadastro
@@ -3347,6 +3348,8 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         function fecharSubmenus() {
             document.getElementById('submenuEntregas').style.display = 'none';
             document.getElementById('submenuSistemizacao').style.display = 'none';
+            const submenuTrocas = document.getElementById('submenuTrocas');
+            if (submenuTrocas) submenuTrocas.style.display = 'none';
             document.querySelector('.menu-grid').style.display = 'grid';
         }
 
@@ -4563,7 +4566,36 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         // MÓDULO 2: TROCAS
         // =====================================================
         
-        // Carrega trocas do Supabase
+        // Abre submenu de trocas
+        function abrirSubmenuTrocas() {
+            // Fecha outros submenus
+            document.querySelectorAll('.submenu-container').forEach(submenu => {
+                submenu.style.display = 'none';
+            });
+            
+            // Esconde menu principal
+            const menuGrid = document.querySelector('.menu-grid');
+            if (menuGrid) menuGrid.style.display = 'none';
+            
+            // Mostra submenu de trocas
+            const submenuTrocas = document.getElementById('submenuTrocas');
+            if (submenuTrocas) {
+                submenuTrocas.style.display = 'block';
+            }
+        }
+        
+        // Fecha submenu de trocas
+        function fecharSubmenuTrocas() {
+            const submenuTrocas = document.getElementById('submenuTrocas');
+            if (submenuTrocas) {
+                submenuTrocas.style.display = 'none';
+            }
+            // Mostra menu principal
+            const menuGrid = document.querySelector('.menu-grid');
+            if (menuGrid) menuGrid.style.display = 'grid';
+        }
+        
+        // Carrega trocas do Supabase (função genérica)
         async function carregarTrocas() {
             if (!window.supabaseClient || !usuarioLogado) return;
             
@@ -4571,9 +4603,10 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 const statusFiltro = document.getElementById('filtroTrocaStatus')?.value || '';
                 const busca = document.getElementById('buscarTroca')?.value.toLowerCase() || '';
                 
+                // Tenta buscar com relacionamentos, mas se falhar, busca sem relacionamentos
                 let query = window.supabaseClient
                     .from(SUPABASE_TABLE_TROCAS)
-                    .select('*, colaborador:usuarios!colaborador_id(nome), responsavel:usuarios!responsavel_id(nome)')
+                    .select('*')
                     .order('data_solicitacao', { ascending: false });
                 
                 if (statusFiltro) {
@@ -4585,6 +4618,55 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 if (error) throw error;
                 
                 let trocas = data || [];
+                
+                // Se temos trocas, tenta buscar os nomes dos usuários relacionados
+                if (trocas.length > 0) {
+                    try {
+                        // Busca todos os IDs únicos de usuários
+                        const userIds = new Set();
+                        trocas.forEach(t => {
+                            if (t.colaborador_id) userIds.add(t.colaborador_id);
+                            if (t.responsavel_id) userIds.add(t.responsavel_id);
+                            if (t.responsavel_nota_id) userIds.add(t.responsavel_nota_id);
+                            if (t.recebeu_mercadoria_id) userIds.add(t.recebeu_mercadoria_id);
+                        });
+                        
+                        // Busca os nomes dos usuários se a tabela usuarios existir
+                        if (userIds.size > 0) {
+                            const { data: usuarios, error: usuariosError } = await window.supabaseClient
+                                .from(SUPABASE_TABLE_USUARIOS)
+                                .select('id, nome')
+                                .in('id', Array.from(userIds));
+                            
+                            if (!usuariosError && usuarios) {
+                                // Cria um mapa de IDs para nomes
+                                const usuariosMap = {};
+                                usuarios.forEach(u => {
+                                    usuariosMap[u.id] = u;
+                                });
+                                
+                                // Adiciona os nomes às trocas
+                                trocas.forEach(t => {
+                                    if (t.colaborador_id && usuariosMap[t.colaborador_id]) {
+                                        t.colaborador = { nome: usuariosMap[t.colaborador_id].nome };
+                                    }
+                                    if (t.responsavel_id && usuariosMap[t.responsavel_id]) {
+                                        t.responsavel = { nome: usuariosMap[t.responsavel_id].nome };
+                                    }
+                                    if (t.responsavel_nota_id && usuariosMap[t.responsavel_nota_id]) {
+                                        t.responsavel_nota = { nome: usuariosMap[t.responsavel_nota_id].nome };
+                                    }
+                                    if (t.recebeu_mercadoria_id && usuariosMap[t.recebeu_mercadoria_id]) {
+                                        t.recebeu_mercadoria = { nome: usuariosMap[t.recebeu_mercadoria_id].nome };
+                                    }
+                                });
+                            }
+                        }
+                    } catch (usuarioError) {
+                        // Se falhar ao buscar usuários, continua sem os nomes
+                        console.warn('Não foi possível buscar nomes dos usuários:', usuarioError);
+                    }
+                }
                 
                 // Filtro por busca (nome do produto)
                 if (busca) {
@@ -4605,9 +4687,20 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 
             } catch (error) {
                 console.error('Erro ao carregar trocas:', error);
+                console.error('Detalhes do erro:', error.message, error.details);
+                
+                // Mensagem de erro mais detalhada
+                let mensagemErro = '❌ Erro ao carregar trocas.';
+                if (error.message) {
+                    mensagemErro += `<br><small style="color: #666;">${error.message}</small>`;
+                }
+                
                 document.getElementById('listaTrocas').innerHTML = `
                     <div class="empty-state">
-                        <p>❌ Erro ao carregar trocas.</p>
+                        <p>${mensagemErro}</p>
+                        <p style="margin-top: 10px; color: #666; font-size: 12px;">
+                            Verifique o console do navegador para mais detalhes.
+                        </p>
                     </div>
                 `;
             }
@@ -4676,11 +4769,60 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                                 <strong>📝 Observações:</strong> ${t.observacoes}
                             </div>
                         ` : ''}
+                        ${t.nota_fiscal_url ? `
+                            <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 8px;">
+                                <strong>📄 Nota Fiscal:</strong> 
+                                ${t.responsavel_nota ? `Anexada por ${t.responsavel_nota.nome}` : 'Anexada'}
+                                ${t.data_nota_fiscal ? ` em ${new Date(t.data_nota_fiscal).toLocaleString('pt-BR')}` : ''}
+                                <br>
+                                <button class="btn-small" onclick="baixarNotaFiscal('${t.nota_fiscal_url}', '${t.nome_produto}')" style="margin-top: 5px; background: #2196F3; color: white;">
+                                    📥 Baixar Nota Fiscal
+                                </button>
+                            </div>
+                        ` : t.sem_nota_fiscal ? `
+                            <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: #fff3e0; border-radius: 8px;">
+                                <strong>❌ Sem Nota Fiscal:</strong> 
+                                ${t.responsavel_nota ? `Marcado por ${t.responsavel_nota.nome}` : 'Marcado'}
+                                ${t.data_nota_fiscal ? ` em ${new Date(t.data_nota_fiscal).toLocaleString('pt-BR')}` : ''}
+                            </div>
+                        ` : ''}
+                        ${t.produto_sem_troca ? `
+                            <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: #ffebee; border-radius: 8px; border-left: 4px solid #dc3545;">
+                                <strong>🚫 Produto sem Troca:</strong> 
+                                ${t.responsavel_nota ? `Marcado por ${t.responsavel_nota.nome}` : 'Marcado'}
+                                ${t.data_nota_fiscal ? ` em ${new Date(t.data_nota_fiscal).toLocaleString('pt-BR')}` : ''}
+                                <br>
+                                <span style="color: #dc3545; font-size: 12px; font-weight: bold;">⚠️ Esta troca foi cancelada pois o produto não tem direito a troca.</span>
+                            </div>
+                        ` : ''}
+                        ${t.recebeu_mercadoria_id ? `
+                            <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: #fff3e0; border-radius: 8px;">
+                                <strong>📦 Mercadoria Recebida:</strong> 
+                                ${t.recebeu_mercadoria?.nome || 'N/A'}
+                                ${t.data_recebimento ? ` em ${new Date(t.data_recebimento).toLocaleString('pt-BR')}` : ''}
+                            </div>
+                        ` : ''}
+                        ${t.acao_final ? `
+                            <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: ${t.acao_final === 'recolhido' ? '#e8f5e9' : '#ffebee'}; border-radius: 8px;">
+                                <strong>${t.acao_final === 'recolhido' ? '✅ RECOLHIDO' : '🗑️ DESCARTADO'}:</strong>
+                                ${t.data_acao_final ? new Date(t.data_acao_final).toLocaleString('pt-BR') : ''}
+                            </div>
+                        ` : ''}
                         ${t.status === 'pendente' && temPermissao('GESTAO', usuarioLogado) ? `
                             <div class="entrega-actions" style="margin-top: 15px;">
-                                <button class="btn-small btn-verde" onclick="processarTroca('${t.id}')">🔄 Processar</button>
-                                <button class="btn-small btn-verde" onclick="concluirTroca('${t.id}')">✅ Concluir</button>
+                                <button class="btn-small btn-verde" onclick="abrirModalAnexarNotaFiscal('${t.id}')">📄 Anexar Nota Fiscal</button>
                                 <button class="btn-small btn-cancelar" onclick="cancelarTroca('${t.id}')">❌ Cancelar</button>
+                            </div>
+                        ` : ''}
+                        ${t.status === 'em_processamento' && (t.nota_fiscal_url || t.sem_nota_fiscal) && !t.recebeu_mercadoria_id && !t.produto_sem_troca && temPermissao('GESTAO', usuarioLogado) ? `
+                            <div class="entrega-actions" style="margin-top: 15px;">
+                                <button class="btn-small btn-verde" onclick="marcarRecebimentoMercadoria('${t.id}')">📦 Receber Mercadoria</button>
+                            </div>
+                        ` : ''}
+                        ${t.recebeu_mercadoria_id && !t.acao_final && temPermissao('GESTAO', usuarioLogado) ? `
+                            <div class="entrega-actions" style="margin-top: 15px;">
+                                <button class="btn-small btn-verde" onclick="finalizarTroca('${t.id}', 'recolhido')">✅ RECOLHIDO</button>
+                                <button class="btn-small" onclick="finalizarTroca('${t.id}', 'descartado')" style="background: #dc3545; color: white;">🗑️ DESCARTADO</button>
                             </div>
                         ` : ''}
                     </div>
@@ -4747,9 +4889,9 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 // Limpa formulário
                 limparFormularioTroca();
                 
-                // Volta para lista
-                mostrarTela('screenTrocas');
-                carregarTrocas();
+                // Volta para lista de pendentes
+                mostrarTela('screenTrocasPendentes');
+                carregarTrocasPendentes();
                 
             } catch (error) {
                 console.error('Erro ao salvar troca:', error);
@@ -4862,6 +5004,620 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             document.getElementById('formNovaTroca')?.reset();
             const previewDiv = document.getElementById('previewFotoTroca');
             if (previewDiv) previewDiv.style.display = 'none';
+        }
+        
+        // Carrega trocas pendentes
+        async function carregarTrocasPendentes() {
+            await carregarTrocasPorStatus('pendente', 'listaTrocasPendentes', 'buscarTrocaPendente');
+        }
+        
+        // Carrega trocas em processo
+        async function carregarTrocasProcesso() {
+            await carregarTrocasPorStatus('em_processamento', 'listaTrocasProcesso', 'buscarTrocaProcesso');
+        }
+        
+        // Carrega trocas realizadas
+        async function carregarTrocasRealizadas() {
+            await carregarTrocasPorStatus('concluida', 'listaTrocasRealizadas', 'buscarTrocaRealizada');
+        }
+        
+        // Função auxiliar para carregar trocas por status
+        async function carregarTrocasPorStatus(status, listaId, buscaId) {
+            if (!window.supabaseClient || !usuarioLogado) return;
+            
+            try {
+                const busca = document.getElementById(buscaId)?.value.toLowerCase() || '';
+                
+                let query = window.supabaseClient
+                    .from(SUPABASE_TABLE_TROCAS)
+                    .select('*')
+                    .eq('status', status)
+                    .order('data_solicitacao', { ascending: false });
+                
+                const { data, error } = await query;
+                
+                if (error) throw error;
+                
+                let trocas = data || [];
+                
+                // Busca nomes dos usuários
+                if (trocas.length > 0) {
+                    try {
+                        const userIds = new Set();
+                        trocas.forEach(t => {
+                            if (t.colaborador_id) userIds.add(t.colaborador_id);
+                            if (t.responsavel_id) userIds.add(t.responsavel_id);
+                            if (t.responsavel_nota_id) userIds.add(t.responsavel_nota_id);
+                            if (t.recebeu_mercadoria_id) userIds.add(t.recebeu_mercadoria_id);
+                        });
+                        
+                        if (userIds.size > 0) {
+                            const { data: usuarios, error: usuariosError } = await window.supabaseClient
+                                .from(SUPABASE_TABLE_USUARIOS)
+                                .select('id, nome')
+                                .in('id', Array.from(userIds));
+                            
+                            if (!usuariosError && usuarios) {
+                                const usuariosMap = {};
+                                usuarios.forEach(u => {
+                                    usuariosMap[u.id] = u;
+                                });
+                                
+                                trocas.forEach(t => {
+                                    if (t.colaborador_id && usuariosMap[t.colaborador_id]) {
+                                        t.colaborador = { nome: usuariosMap[t.colaborador_id].nome };
+                                    }
+                                    if (t.responsavel_id && usuariosMap[t.responsavel_id]) {
+                                        t.responsavel = { nome: usuariosMap[t.responsavel_id].nome };
+                                    }
+                                    if (t.responsavel_nota_id && usuariosMap[t.responsavel_nota_id]) {
+                                        t.responsavel_nota = { nome: usuariosMap[t.responsavel_nota_id].nome };
+                                    }
+                                    if (t.recebeu_mercadoria_id && usuariosMap[t.recebeu_mercadoria_id]) {
+                                        t.recebeu_mercadoria = { nome: usuariosMap[t.recebeu_mercadoria_id].nome };
+                                    }
+                                });
+                            }
+                        }
+                    } catch (usuarioError) {
+                        console.warn('Não foi possível buscar nomes dos usuários:', usuarioError);
+                    }
+                }
+                
+                // Filtro por busca
+                if (busca) {
+                    trocas = trocas.filter(t => t.nome_produto.toLowerCase().includes(busca));
+                }
+                
+                // Renderiza conforme o status
+                renderizarTrocasPorStatus(trocas, listaId, status);
+                
+            } catch (error) {
+                console.error(`Erro ao carregar trocas ${status}:`, error);
+                document.getElementById(listaId).innerHTML = `
+                    <div class="empty-state">
+                        <p>❌ Erro ao carregar trocas ${status}.</p>
+                        ${error.message ? `<small style="color: #666;">${error.message}</small>` : ''}
+                    </div>
+                `;
+            }
+        }
+        
+        // Renderiza trocas conforme o status
+        function renderizarTrocasPorStatus(trocas, listaId, status) {
+            const lista = document.getElementById(listaId);
+            if (!lista) return;
+            
+            if (trocas.length === 0) {
+                lista.innerHTML = '<div class="empty-state"><p>📭 Nenhuma troca encontrada.</p></div>';
+                return;
+            }
+            
+            // Usa a função renderizarTrocas existente, mas com botões específicos por status
+            lista.innerHTML = trocas.map(t => {
+                const html = renderizarCardTroca(t, status);
+                return html;
+            }).join('');
+        }
+        
+        // Renderiza card de troca com botões específicos por status
+        function renderizarCardTroca(t, statusFiltro) {
+            const dataSolicitacao = new Date(t.data_solicitacao);
+            const statusCor = {
+                'pendente': '#ffc107',
+                'em_processamento': '#17a2b8',
+                'concluida': '#28a745',
+                'cancelada': '#dc3545'
+            }[t.status] || '#6c757d';
+            
+            const statusLabel = {
+                'pendente': '⏳ Pendente',
+                'em_processamento': '🔄 Em Processamento',
+                'concluida': '✅ Concluída',
+                'cancelada': '❌ Cancelada'
+            }[t.status] || t.status;
+            
+            const motivoLabel = {
+                'vencido': '⏰ Vencido',
+                'danificado': '💔 Danificado'
+            }[t.motivo] || t.motivo;
+            
+            // Botões específicos por status
+            let botoesHtml = '';
+            
+            if (statusFiltro === 'pendente') {
+                // Trocas pendentes: anexar nota ou processar
+                botoesHtml = `
+                    <div class="entrega-actions" style="margin-top: 15px;">
+                        <button class="btn-small btn-verde" onclick="abrirModalAnexarNotaFiscal('${t.id}')">📄 Anotar/Processar</button>
+                        <button class="btn-small" onclick="processarTrocaDireto('${t.id}')" style="background: #17a2b8; color: white;">🔄 Processar</button>
+                    </div>
+                `;
+            } else if (statusFiltro === 'em_processamento') {
+                // Trocas em processo: receber mercadoria
+                if (!t.recebeu_mercadoria_id) {
+                    botoesHtml = `
+                        <div class="entrega-actions" style="margin-top: 15px;">
+                            <button class="btn-small btn-verde" onclick="marcarRecebimentoMercadoria('${t.id}')">📦 Receber Mercadoria</button>
+                        </div>
+                    `;
+                } else if (!t.acao_final) {
+                    botoesHtml = `
+                        <div class="entrega-actions" style="margin-top: 15px;">
+                            <button class="btn-small btn-verde" onclick="finalizarTroca('${t.id}', 'recolhido')">✅ RECOLHIDO</button>
+                            <button class="btn-small" onclick="finalizarTroca('${t.id}', 'descartado')" style="background: #dc3545; color: white;">🗑️ DESCARTADO</button>
+                        </div>
+                    `;
+                }
+            } else if (statusFiltro === 'concluida') {
+                // Trocas realizadas: apenas visualização
+                botoesHtml = '';
+            }
+            
+            return `
+                <div class="entrega-card" style="border-left: 4px solid ${statusCor};">
+                    <div class="entrega-header">
+                        <div class="entrega-nome">
+                            <strong>${t.nome_produto}</strong>
+                            <span style="color: var(--text-secondary); font-size: 12px;"> | ${motivoLabel} | Qtd: ${t.quantidade}</span>
+                        </div>
+                        <span class="status-badge" style="background: ${statusCor}; color: white;">
+                            ${statusLabel}
+                        </span>
+                    </div>
+                    ${t.codigo_barras ? `
+                        <div class="entrega-info" style="margin-top: 10px;">
+                            <strong>📊 Código de Barras:</strong> ${t.codigo_barras}
+                        </div>
+                    ` : ''}
+                    <div class="entrega-info">
+                        <strong>📅 Solicitado em:</strong> ${dataSolicitacao.toLocaleString('pt-BR')}
+                    </div>
+                    <div class="entrega-info">
+                        <strong>👤 Colaborador:</strong> ${t.colaborador?.nome || 'N/A'}
+                    </div>
+                    ${t.responsavel ? `
+                        <div class="entrega-info">
+                            <strong>👨‍💼 Responsável:</strong> ${t.responsavel.nome}
+                        </div>
+                    ` : ''}
+                    ${t.observacoes ? `
+                        <div class="entrega-info">
+                            <strong>📝 Observações:</strong> ${t.observacoes}
+                        </div>
+                    ` : ''}
+                    ${t.nota_fiscal_url ? `
+                        <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 8px;">
+                            <strong>📄 Nota Fiscal:</strong> 
+                            ${t.responsavel_nota ? `Anexada por ${t.responsavel_nota.nome}` : 'Anexada'}
+                            ${t.data_nota_fiscal ? ` em ${new Date(t.data_nota_fiscal).toLocaleString('pt-BR')}` : ''}
+                            <br>
+                            <button class="btn-small" onclick="baixarNotaFiscal('${t.nota_fiscal_url}', '${t.nome_produto}')" style="margin-top: 5px; background: #2196F3; color: white;">
+                                📥 Baixar Nota Fiscal
+                            </button>
+                        </div>
+                    ` : t.sem_nota_fiscal ? `
+                        <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: #fff3e0; border-radius: 8px;">
+                            <strong>❌ Sem Nota Fiscal:</strong> 
+                            ${t.responsavel_nota ? `Marcado por ${t.responsavel_nota.nome}` : 'Marcado'}
+                            ${t.data_nota_fiscal ? ` em ${new Date(t.data_nota_fiscal).toLocaleString('pt-BR')}` : ''}
+                        </div>
+                    ` : ''}
+                    ${t.produto_sem_troca ? `
+                        <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: #ffebee; border-radius: 8px; border-left: 4px solid #dc3545;">
+                            <strong>🚫 Produto sem Troca:</strong> 
+                            ${t.responsavel_nota ? `Marcado por ${t.responsavel_nota.nome}` : 'Marcado'}
+                            ${t.data_nota_fiscal ? ` em ${new Date(t.data_nota_fiscal).toLocaleString('pt-BR')}` : ''}
+                            <br>
+                            <span style="color: #dc3545; font-size: 12px; font-weight: bold;">⚠️ Esta troca foi cancelada pois o produto não tem direito a troca.</span>
+                        </div>
+                    ` : ''}
+                    ${t.recebeu_mercadoria_id ? `
+                        <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: #fff3e0; border-radius: 8px;">
+                            <strong>📦 Mercadoria Recebida:</strong> 
+                            ${t.recebeu_mercadoria?.nome || 'N/A'}
+                            ${t.data_recebimento ? ` em ${new Date(t.data_recebimento).toLocaleString('pt-BR')}` : ''}
+                        </div>
+                    ` : ''}
+                    ${t.acao_final ? `
+                        <div class="entrega-info" style="margin-top: 10px; padding: 10px; background: ${t.acao_final === 'recolhido' ? '#e8f5e9' : '#ffebee'}; border-radius: 8px;">
+                            <strong>${t.acao_final === 'recolhido' ? '✅ RECOLHIDO' : '🗑️ DESCARTADO'}:</strong>
+                            ${t.data_acao_final ? new Date(t.data_acao_final).toLocaleString('pt-BR') : ''}
+                        </div>
+                    ` : ''}
+                    ${botoesHtml}
+                </div>
+            `;
+        }
+        
+        // Processa troca diretamente (sem nota fiscal)
+        async function processarTrocaDireto(trocaId) {
+            if (!window.supabaseClient || !usuarioLogado) return;
+            
+            if (!confirm('Processar esta troca diretamente (sem nota fiscal)?')) return;
+            
+            try {
+                let responsavelId = await obterOuCriarUsuario(usuarioLogado);
+                
+                const { error } = await window.supabaseClient
+                    .from(SUPABASE_TABLE_TROCAS)
+                    .update({
+                        status: 'em_processamento',
+                        responsavel_id: responsavelId,
+                        data_processamento: new Date().toISOString()
+                    })
+                    .eq('id', trocaId);
+                
+                if (error) throw error;
+                
+                registrarLog(`Troca processada diretamente: ${trocaId}`, 'atualizar', 'troca', trocaId);
+                
+                showMessageBox('✅ Sucesso', 'Troca processada com sucesso!');
+                carregarTrocasPendentes();
+                
+            } catch (error) {
+                console.error('Erro ao processar troca:', error);
+                showMessageBox('❌ Erro', `Erro ao processar troca: ${error.message}`);
+            }
+        }
+        
+        // Abre modal para anexar nota fiscal
+        function abrirModalAnexarNotaFiscal(trocaId) {
+            let modal = document.getElementById('modalAnexarNotaFiscal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'modalAnexarNotaFiscal';
+                modal.className = 'modal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>📄 Anexar Nota Fiscal</h3>
+                            <button class="modal-close" onclick="fecharModalAnexarNotaFiscal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="formAnexarNotaFiscal" onsubmit="anexarNotaFiscal(event)">
+                                <input type="hidden" id="trocaIdNotaFiscal" value="${trocaId}">
+                                <div class="form-group">
+                                    <label>Selecione o arquivo da Nota Fiscal</label>
+                                    <input type="file" id="notaFiscalFile" accept="image/*,.pdf" onchange="previewNotaFiscal(event); toggleNotaFiscalOptions()">
+                                    <div id="previewNotaFiscal" style="margin-top: 10px; display: none;">
+                                        <img id="imgPreviewNotaFiscal" src="" alt="Preview" style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 2px solid var(--border-color); display: none;">
+                                        <p id="pdfPreviewNotaFiscal" style="display: none; color: #2196F3;">📄 Arquivo PDF selecionado</p>
+                                    </div>
+                                </div>
+                                <div class="form-group" style="margin-top: 15px;">
+                                    <label style="display: flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" id="semNotaFiscal" onchange="toggleNotaFiscalOptions()" style="width: 20px; height: 20px; margin-right: 10px; cursor: pointer;">
+                                        <span>❌ Não tem nota fiscal</span>
+                                    </label>
+                                </div>
+                                <div class="form-group" style="margin-top: 15px;">
+                                    <label style="display: flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" id="produtoSemTroca" style="width: 20px; height: 20px; margin-right: 10px; cursor: pointer;">
+                                        <span>🚫 Produto não tem troca</span>
+                                    </label>
+                                </div>
+                                <div class="modal-actions">
+                                    <button type="button" class="btn-cancelar" onclick="fecharModalAnexarNotaFiscal()">Cancelar</button>
+                                    <button type="submit" class="btn-primary">💾 Salvar</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            } else {
+                document.getElementById('trocaIdNotaFiscal').value = trocaId;
+            }
+            modal.classList.add('active');
+        }
+        
+        // Fecha modal de anexar nota fiscal
+        function fecharModalAnexarNotaFiscal() {
+            const modal = document.getElementById('modalAnexarNotaFiscal');
+            if (modal) modal.classList.remove('active');
+            document.getElementById('formAnexarNotaFiscal')?.reset();
+            document.getElementById('previewNotaFiscal').style.display = 'none';
+            document.getElementById('semNotaFiscal').checked = false;
+            document.getElementById('produtoSemTroca').checked = false;
+        }
+        
+        // Toggle das opções de nota fiscal
+        function toggleNotaFiscalOptions() {
+            const semNotaFiscal = document.getElementById('semNotaFiscal');
+            const notaFiscalFile = document.getElementById('notaFiscalFile');
+            const previewNotaFiscal = document.getElementById('previewNotaFiscal');
+            
+            if (semNotaFiscal.checked) {
+                notaFiscalFile.disabled = true;
+                notaFiscalFile.value = '';
+                previewNotaFiscal.style.display = 'none';
+            } else {
+                notaFiscalFile.disabled = false;
+            }
+        }
+        
+        // Preview da nota fiscal
+        function previewNotaFiscal(event) {
+            const file = event.target.files[0];
+            const previewDiv = document.getElementById('previewNotaFiscal');
+            const imgPreview = document.getElementById('imgPreviewNotaFiscal');
+            const pdfPreview = document.getElementById('pdfPreviewNotaFiscal');
+            
+            if (file) {
+                previewDiv.style.display = 'block';
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        imgPreview.src = e.target.result;
+                        imgPreview.style.display = 'block';
+                        pdfPreview.style.display = 'none';
+                    };
+                    reader.readAsDataURL(file);
+                } else if (file.type === 'application/pdf') {
+                    imgPreview.style.display = 'none';
+                    pdfPreview.style.display = 'block';
+                }
+            }
+        }
+        
+        // Anexa nota fiscal (upload)
+        async function anexarNotaFiscal(event) {
+            if (event) event.preventDefault();
+            
+            if (!window.supabaseClient || !usuarioLogado) {
+                showMessageBox('❌ Erro', 'Conexão com o Supabase não estabelecida.');
+                return;
+            }
+            
+            const trocaId = document.getElementById('trocaIdNotaFiscal')?.value;
+            const notaFiscalFile = document.getElementById('notaFiscalFile')?.files[0];
+            const semNotaFiscal = document.getElementById('semNotaFiscal')?.checked || false;
+            const produtoSemTroca = document.getElementById('produtoSemTroca')?.checked || false;
+            
+            if (!trocaId) {
+                showMessageBox('⚠️ Erro', 'ID da troca não encontrado!');
+                return;
+            }
+            
+            // Validação: precisa ter arquivo OU marcar sem nota fiscal
+            if (!notaFiscalFile && !semNotaFiscal) {
+                showMessageBox('⚠️ Erro', 'Selecione um arquivo de nota fiscal ou marque "Não tem nota fiscal"!');
+                return;
+            }
+            
+            try {
+                let notaFiscalUrl = null;
+                
+                // Se tem arquivo, faz upload
+                if (notaFiscalFile && !semNotaFiscal) {
+                    // Garante que o bucket existe
+                    await garantirBucketExiste(SUPABASE_STORAGE_BUCKET_TROCAS);
+                    
+                    // Upload da nota fiscal
+                    const timestamp = new Date().getTime();
+                    const extensao = notaFiscalFile.name.split('.').pop();
+                    const nomeArquivo = `nota_fiscal_${trocaId}_${timestamp}.${extensao}`;
+                    
+                    const { error: uploadError } = await window.supabaseClient.storage
+                        .from(SUPABASE_STORAGE_BUCKET_TROCAS)
+                        .upload(nomeArquivo, notaFiscalFile, {
+                            cacheControl: '3600',
+                            contentType: notaFiscalFile.type,
+                            upsert: true
+                        });
+                    
+                    if (uploadError) throw uploadError;
+                    
+                    // Obtém URL pública
+                    const { data: publicData } = window.supabaseClient.storage
+                        .from(SUPABASE_STORAGE_BUCKET_TROCAS)
+                        .getPublicUrl(nomeArquivo);
+                    
+                    notaFiscalUrl = publicData.publicUrl;
+                }
+                
+                // Busca ou cria usuário
+                let responsavelNotaId = await obterOuCriarUsuario(usuarioLogado);
+                
+                // Prepara dados para atualização
+                const dadosAtualizacao = {
+                    responsavel_nota_id: responsavelNotaId,
+                    data_nota_fiscal: new Date().toISOString(),
+                    sem_nota_fiscal: semNotaFiscal,
+                    produto_sem_troca: produtoSemTroca
+                };
+                
+                // Se tem nota fiscal, adiciona URL
+                if (notaFiscalUrl) {
+                    dadosAtualizacao.nota_fiscal_url = notaFiscalUrl;
+                } else {
+                    dadosAtualizacao.nota_fiscal_url = null;
+                }
+                
+                // Se produto não tem troca, cancela a troca
+                if (produtoSemTroca) {
+                    dadosAtualizacao.status = 'cancelada';
+                } else if (semNotaFiscal || notaFiscalUrl) {
+                    // Se tem nota ou foi marcado sem nota, vai para processamento
+                    dadosAtualizacao.status = 'em_processamento';
+                }
+                
+                // Atualiza a troca
+                const { error } = await window.supabaseClient
+                    .from(SUPABASE_TABLE_TROCAS)
+                    .update(dadosAtualizacao)
+                    .eq('id', trocaId);
+                
+                if (error) throw error;
+                
+                // Mensagem de sucesso
+                let mensagem = '';
+                if (produtoSemTroca) {
+                    mensagem = 'Produto marcado como sem troca. Troca cancelada!';
+                } else if (semNotaFiscal) {
+                    mensagem = 'Marcado como sem nota fiscal com sucesso!';
+                } else {
+                    mensagem = 'Nota fiscal anexada com sucesso!';
+                }
+                
+                registrarLog(`Nota fiscal processada: ${trocaId}`, 'atualizar', 'troca', trocaId, {
+                    nota_fiscal_url: notaFiscalUrl,
+                    sem_nota_fiscal: semNotaFiscal,
+                    produto_sem_troca: produtoSemTroca
+                });
+                
+                showMessageBox('✅ Sucesso', mensagem);
+                fecharModalAnexarNotaFiscal();
+                
+                // Recarrega a tela apropriada
+                const telaAtual = document.querySelector('.screen.active')?.id;
+                if (telaAtual === 'screenTrocasPendentes') {
+                    carregarTrocasPendentes();
+                } else if (telaAtual === 'screenTrocasProcesso') {
+                    carregarTrocasProcesso();
+                } else {
+                    carregarTrocasPendentes();
+                }
+                
+            } catch (error) {
+                console.error('Erro ao processar nota fiscal:', error);
+                showMessageBox('❌ Erro', `Erro ao processar: ${error.message}`);
+            }
+        }
+        
+        // Baixa nota fiscal
+        function baixarNotaFiscal(notaFiscalUrl, nomeProduto) {
+            const link = document.createElement('a');
+            link.href = notaFiscalUrl;
+            link.download = `nota_fiscal_${nomeProduto.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // Marca recebimento da mercadoria
+        async function marcarRecebimentoMercadoria(trocaId) {
+            if (!window.supabaseClient || !usuarioLogado) return;
+            
+            if (!confirm('Confirmar recebimento da mercadoria?')) return;
+            
+            try {
+                let recebeuMercadoriaId = await obterOuCriarUsuario(usuarioLogado);
+                
+                const { error } = await window.supabaseClient
+                    .from(SUPABASE_TABLE_TROCAS)
+                    .update({
+                        recebeu_mercadoria_id: recebeuMercadoriaId,
+                        data_recebimento: new Date().toISOString()
+                    })
+                    .eq('id', trocaId);
+                
+                if (error) throw error;
+                
+                registrarLog(`Mercadoria recebida: ${trocaId}`, 'atualizar', 'troca', trocaId);
+                
+                showMessageBox('✅ Sucesso', 'Mercadoria marcada como recebida!');
+                
+                // Recarrega a tela apropriada
+                const telaAtual = document.querySelector('.screen.active')?.id;
+                if (telaAtual === 'screenTrocasProcesso') {
+                    carregarTrocasProcesso();
+                } else {
+                    carregarTrocasProcesso();
+                }
+                
+            } catch (error) {
+                console.error('Erro ao marcar recebimento:', error);
+                showMessageBox('❌ Erro', `Erro ao marcar recebimento: ${error.message}`);
+            }
+        }
+        
+        // Finaliza troca (recolhido ou descartado)
+        async function finalizarTroca(trocaId, acao) {
+            if (!window.supabaseClient || !usuarioLogado) return;
+            
+            const acaoLabel = acao === 'recolhido' ? 'RECOLHIDO' : 'DESCARTADO';
+            if (!confirm(`Confirmar que a troca foi ${acaoLabel}?`)) return;
+            
+            try {
+                const { error } = await window.supabaseClient
+                    .from(SUPABASE_TABLE_TROCAS)
+                    .update({
+                        acao_final: acao,
+                        data_acao_final: new Date().toISOString(),
+                        status: 'concluida'
+                    })
+                    .eq('id', trocaId);
+                
+                if (error) throw error;
+                
+                registrarLog(`Troca finalizada como ${acao}: ${trocaId}`, 'atualizar', 'troca', trocaId, {
+                    acao_final: acao
+                });
+                
+                showMessageBox('✅ Sucesso', `Troca finalizada como ${acaoLabel}!`);
+                
+                // Recarrega a tela apropriada
+                const telaAtual = document.querySelector('.screen.active')?.id;
+                if (telaAtual === 'screenTrocasProcesso') {
+                    carregarTrocasProcesso();
+                } else if (telaAtual === 'screenTrocasRealizadas') {
+                    carregarTrocasRealizadas();
+                } else {
+                    carregarTrocasRealizadas();
+                }
+                
+            } catch (error) {
+                console.error('Erro ao finalizar troca:', error);
+                showMessageBox('❌ Erro', `Erro ao finalizar troca: ${error.message}`);
+            }
+        }
+        
+        // Garante que o bucket existe (função auxiliar)
+        async function garantirBucketExiste(bucketName) {
+            try {
+                const { data: buckets, error: listError } = await window.supabaseClient.storage.listBuckets();
+                if (listError) throw listError;
+                
+                const bucketExiste = buckets?.some(b => b.name === bucketName);
+                
+                if (!bucketExiste) {
+                    const { error: createError } = await window.supabaseClient.storage.createBucket(bucketName, {
+                        public: true,
+                        fileSizeLimit: 5242880, // 5MB
+                        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf']
+                    });
+                    
+                    if (createError && !createError.message.includes('already exists')) {
+                        throw createError;
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao verificar/criar bucket:', error);
+                // Não lança erro para não bloquear o fluxo
+            }
         }
         
         // =====================================================
@@ -5196,6 +5952,20 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         window.previewFotoProdutoSemCadastro = previewFotoProdutoSemCadastro;
         window.limparFormularioProdutoSemCadastro = limparFormularioProdutoSemCadastro;
         window.previewFotoTroca = previewFotoTroca;
+        window.abrirSubmenuTrocas = abrirSubmenuTrocas;
+        window.fecharSubmenuTrocas = fecharSubmenuTrocas;
+        window.carregarTrocasPendentes = carregarTrocasPendentes;
+        window.carregarTrocasProcesso = carregarTrocasProcesso;
+        window.carregarTrocasRealizadas = carregarTrocasRealizadas;
+        window.processarTrocaDireto = processarTrocaDireto;
+        window.abrirModalAnexarNotaFiscal = abrirModalAnexarNotaFiscal;
+        window.fecharModalAnexarNotaFiscal = fecharModalAnexarNotaFiscal;
+        window.toggleNotaFiscalOptions = toggleNotaFiscalOptions;
+        window.previewNotaFiscal = previewNotaFiscal;
+        window.anexarNotaFiscal = anexarNotaFiscal;
+        window.baixarNotaFiscal = baixarNotaFiscal;
+        window.marcarRecebimentoMercadoria = marcarRecebimentoMercadoria;
+        window.finalizarTroca = finalizarTroca;
         window.processarTroca = processarTroca;
         window.concluirTroca = concluirTroca;
         window.cancelarTroca = cancelarTroca;
@@ -8669,7 +9439,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                             </div>
                             
                             <!-- Trocas -->
-                            <div class="submenu-card" onclick="mostrarTela('screenTrocas'); carregarTrocas(); fecharSubmenus();">
+                            <div class="submenu-card" onclick="abrirSubmenuTrocas();">
                                 <div class="submenu-card-icon">🔄</div>
                                 <div class="submenu-card-text">Trocas</div>
                             </div>
@@ -8687,6 +9457,34 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                             </div>
                         </div>
                         <button class="btn-voltar-submenu" onclick="fecharSubmenus()">← Voltar</button>
+                    </div>
+                    
+                    <!-- SUBMENU TROCAS (oculto por padrão) -->
+                    <div id="submenuTrocas" class="submenu-container" style="display: none;">
+                        <h3 style="text-align: center; margin: 20px 0 15px; color: var(--text-primary);">🔄 TROCAS</h3>
+                        
+                        <div class="submenu-grid-layout">
+                            <div class="submenu-col-left">
+                                <div class="submenu-card" onclick="mostrarTela('screenNovaTroca'); limparFormularioTroca(); fecharSubmenus();">
+                                    <div class="submenu-card-icon">➕</div>
+                                    <div class="submenu-card-text">Nova Troca</div>
+                                </div>
+                                <div class="submenu-card" onclick="mostrarTela('screenTrocasPendentes'); carregarTrocasPendentes(); fecharSubmenus();">
+                                    <div class="submenu-card-icon">⏳</div>
+                                    <div class="submenu-card-text">Trocas Pendentes</div>
+                                </div>
+                                <div class="submenu-card" onclick="mostrarTela('screenTrocasProcesso'); carregarTrocasProcesso(); fecharSubmenus();">
+                                    <div class="submenu-card-icon">🔄</div>
+                                    <div class="submenu-card-text">Trocas em Processo</div>
+                                </div>
+                                <div class="submenu-card" onclick="mostrarTela('screenTrocasRealizadas'); carregarTrocasRealizadas(); fecharSubmenus();">
+                                    <div class="submenu-card-icon">✅</div>
+                                    <div class="submenu-card-text">Trocas Realizadas</div>
+                                </div>
+                            </div>
+                            <div class="submenu-col-right"></div>
+                        </div>
+                        <button class="btn-voltar-submenu" onclick="fecharSubmenuTrocas();">← Voltar</button>
                     </div>
                 </div>
 
@@ -9526,56 +10324,69 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                     <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
-                <!-- TELA DE TROCAS -->
-                <div id="screenTrocas" class="screen">
-                    <h2>🔄 Trocas</h2>
+                <!-- TELA DE TROCAS PENDENTES -->
+                <div id="screenTrocasPendentes" class="screen">
+                    <h2>⏳ Trocas Pendentes</h2>
                     <p style="text-align: center; margin-bottom: 20px; color: var(--text-secondary);">
-                        Sistema de gerenciamento de trocas de produtos
+                        Colaborador solicita a troca, faz a nota (se precisar) ou manda para processo
                     </p>
                     
-                    <!-- Botão para Nova Troca -->
-                    <div style="margin-bottom: 20px; text-align: center;">
-                        <button class="btn-primary" onclick="mostrarTela('screenNovaTroca'); limparFormularioTroca();" style="background: #17a2b8;">
-                            ➕ Nova Troca
-                        </button>
-                    </div>
-                    
-                    <!-- Filtros -->
                     <div class="form-row" style="margin-bottom: 20px;">
-                        <div class="form-group">
-                            <label>Filtrar por Status:</label>
-                            <select id="filtroTrocaStatus" onchange="carregarTrocas()">
-                                <option value="">Todos</option>
-                                <option value="pendente">Pendente</option>
-                                <option value="em_processamento">Em Processamento</option>
-                                <option value="concluida">Concluída</option>
-                                <option value="cancelada">Cancelada</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
+                        <div class="form-group" style="flex: 1;">
                             <label>Buscar Produto:</label>
-                            <input type="text" id="buscarTroca" placeholder="Nome do produto..." oninput="carregarTrocas()">
-                        </div>
-                    </div>
-                    
-                    <div class="stats-grid full" style="margin-bottom: 20px;">
-                        <div class="stat-card" style="border-color: #ffc107;">
-                            <div class="stat-number orange" id="totalTrocasPendentes">0</div>
-                            <div class="stat-label">Trocas Pendentes</div>
-                        </div>
-                        <div class="stat-card" style="border-color: #17a2b8;">
-                            <div class="stat-number" style="color: #17a2b8;" id="totalTrocasProcessamento">0</div>
-                            <div class="stat-label">Em Processamento</div>
-                        </div>
-                        <div class="stat-card" style="border-color: #28a745;">
-                            <div class="stat-number green" id="totalTrocasConcluidas">0</div>
-                            <div class="stat-label">Trocas Concluídas</div>
+                            <input type="text" id="buscarTrocaPendente" placeholder="Nome do produto..." oninput="carregarTrocasPendentes()">
                         </div>
                     </div>
 
-                    <div id="listaTrocas" style="margin-top: 20px;">
+                    <div id="listaTrocasPendentes" style="margin-top: 20px;">
                         <div class="empty-state">
-                            <p>Carregando trocas...</p>
+                            <p>Carregando trocas pendentes...</p>
+                        </div>
+                    </div>
+
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
+                </div>
+                
+                <!-- TELA DE TROCAS EM PROCESSO -->
+                <div id="screenTrocasProcesso" class="screen">
+                    <h2>🔄 Trocas em Processo</h2>
+                    <p style="text-align: center; margin-bottom: 20px; color: var(--text-secondary);">
+                        Colaborador responsável faz a troca
+                    </p>
+                    
+                    <div class="form-row" style="margin-bottom: 20px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Buscar Produto:</label>
+                            <input type="text" id="buscarTrocaProcesso" placeholder="Nome do produto..." oninput="carregarTrocasProcesso()">
+                        </div>
+                    </div>
+
+                    <div id="listaTrocasProcesso" style="margin-top: 20px;">
+                        <div class="empty-state">
+                            <p>Carregando trocas em processo...</p>
+                        </div>
+                    </div>
+
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
+                </div>
+                
+                <!-- TELA DE TROCAS REALIZADAS -->
+                <div id="screenTrocasRealizadas" class="screen">
+                    <h2>✅ Trocas Realizadas</h2>
+                    <p style="text-align: center; margin-bottom: 20px; color: var(--text-secondary);">
+                        Colaborador responde se descartou ou devolveu
+                    </p>
+                    
+                    <div class="form-row" style="margin-bottom: 20px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Buscar Produto:</label>
+                            <input type="text" id="buscarTrocaRealizada" placeholder="Nome do produto..." oninput="carregarTrocasRealizadas()">
+                        </div>
+                    </div>
+
+                    <div id="listaTrocasRealizadas" style="margin-top: 20px;">
+                        <div class="empty-state">
+                            <p>Carregando trocas realizadas...</p>
                         </div>
                     </div>
 
