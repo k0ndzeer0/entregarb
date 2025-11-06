@@ -142,8 +142,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         const SUPABASE_TABLE_TROCAS = 'trocas'; // Trocas
         const SUPABASE_TABLE_PRODUTOS_FALTA = 'produtos_falta'; // Produtos falta
         const SUPABASE_TABLE_USUARIOS = 'usuarios'; // Usuários
-        const SUPABASE_STORAGE_PRODUTOS_SEM_CADASTRO = 'produtos-sem-cadastro'; // Bucket para fotos
-        const SUPABASE_STORAGE_TROCAS = 'trocas'; // Bucket para fotos de trocas
+        // Todas as imagens são salvas no mesmo bucket do Supabase
         
         // --- SISTEMA DE FIDELIDADE ---
         const FIDELIDADE_NIVEIS = {
@@ -672,7 +671,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         }
 
         // --- FUNÇÃO DE INICIALIZAÇÃO SUPABASE (REATIVADA) ---
-        window.initApp = function() {
+        window.initApp = async function() {
             const loader = document.getElementById('loader');
             const appContainer = document.getElementById('appContainer');
 
@@ -691,6 +690,9 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 // Criar cliente Supabase
                 window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 console.log("✅ Supabase inicializado e conectado!");
+                
+                // Verificar/criar bucket de storage
+                await verificarOuCriarBucket();
                 
                 // Ocultar loader e mostrar app - CHECAGEM DE SEGURANÇA ADICIONADA
                 if (loader) loader.style.display = 'none'; 
@@ -2046,6 +2048,52 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             }
         }
 
+        // --- VERIFICAR/CRIAR BUCKET NO SUPABASE ---
+        async function verificarOuCriarBucket() {
+            if (!window.supabaseClient) return;
+            
+            try {
+                // Verifica se o bucket existe listando buckets
+                const { data: buckets, error: listError } = await window.supabaseClient.storage.listBuckets();
+                
+                if (listError) {
+                    console.warn('Não foi possível listar buckets:', listError);
+                    return; // Continua mesmo se não conseguir listar
+                }
+                
+                // Verifica se o bucket existe
+                const bucketExiste = buckets && buckets.some(b => b.id === SUPABASE_STORAGE_BUCKET);
+                
+                if (!bucketExiste) {
+                    console.log(`Bucket '${SUPABASE_STORAGE_BUCKET}' não encontrado. Tentando criar...`);
+                    
+                    // Tenta criar o bucket
+                    const { data: bucketData, error: createError } = await window.supabaseClient.storage.createBucket(SUPABASE_STORAGE_BUCKET, {
+                        public: true,
+                        fileSizeLimit: 5242880, // 5MB
+                        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/jpg']
+                    });
+                    
+                    if (createError) {
+                        console.warn(`Não foi possível criar o bucket '${SUPABASE_STORAGE_BUCKET}':`, createError);
+                        console.warn('⚠️ ATENÇÃO: Você precisa criar o bucket manualmente no Supabase Dashboard.');
+                        console.warn(`   Nome do bucket: ${SUPABASE_STORAGE_BUCKET}`);
+                        console.warn('   Configurações recomendadas:');
+                        console.warn('   - Público: Sim');
+                        console.warn('   - Limite de arquivo: 5MB');
+                        console.warn('   - Tipos MIME permitidos: image/jpeg, image/png, image/jpg');
+                    } else {
+                        console.log(`✅ Bucket '${SUPABASE_STORAGE_BUCKET}' criado com sucesso!`);
+                    }
+                } else {
+                    console.log(`✅ Bucket '${SUPABASE_STORAGE_BUCKET}' já existe.`);
+                }
+            } catch (error) {
+                console.warn('Erro ao verificar/criar bucket:', error);
+                // Continua mesmo se der erro - pode ser questão de permissões
+            }
+        }
+        
         // --- UPLOAD REAL PARA O SUPABASE STORAGE (CORRIGIDO) ---
         async function uploadComprovante(file, nomeCliente, tipoAnexo) {
             if (!window.supabaseClient) {
@@ -2087,7 +2135,23 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             } catch (error) {
                 customModal.classList.remove('active');
                 console.error('Erro no upload para o Storage:', error);
-                showMessageBox('❌ Erro de Upload', `Falha ao enviar a foto: ${error.message}. Verifique as políticas de RLS do Storage Bucket.`);
+                
+                // Mensagem de erro mais específica para bucket não encontrado
+                let mensagemErro = `Falha ao enviar a foto: ${error.message}.`;
+                if (error.message && error.message.includes('Bucket not found')) {
+                    mensagemErro = `❌ Erro: Bucket '${SUPABASE_STORAGE_BUCKET}' não encontrado no Supabase.\n\n` +
+                        `Por favor, crie o bucket manualmente no Supabase Dashboard:\n` +
+                        `1. Vá em Storage no Supabase\n` +
+                        `2. Crie um novo bucket chamado: ${SUPABASE_STORAGE_BUCKET}\n` +
+                        `3. Configure como Público\n` +
+                        `4. Defina limite de 5MB\n` +
+                        `5. Configure as políticas RLS (permitir SELECT e INSERT para anon)\n` +
+                        `6. Tente novamente`;
+                } else {
+                    mensagemErro += ` Verifique as políticas de RLS do Storage Bucket.`;
+                }
+                
+                showMessageBox('❌ Erro de Upload', mensagemErro);
                 return null;
             }
         }
@@ -2933,20 +2997,66 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             }
         }
 
-        function mostrarTela(screenId) {
+        // Sistema de histórico de navegação
+        let historicoNavegacao = [];
+        let telaAtual = null;
+        
+        function mostrarTela(screenId, naoAdicionarHistorico = false) {
+            // Se não for para adicionar ao histórico (voltar), apenas mostra a tela
+            if (!naoAdicionarHistorico && telaAtual && telaAtual !== screenId) {
+                // Adiciona a tela atual ao histórico apenas se não for a mesma tela
+                historicoNavegacao.push(telaAtual);
+                // Limita o histórico a 20 telas
+                if (historicoNavegacao.length > 20) {
+                    historicoNavegacao.shift();
+                }
+            }
+            
+            // Atualiza tela atual
+            telaAtual = screenId;
+            
+            // Esconde todas as telas
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.getElementById(screenId).classList.add('active');
+            
+            // Mostra a tela solicitada
+            const tela = document.getElementById(screenId);
+            if (tela) {
+                tela.classList.add('active');
+            }
             
             // Atualiza nomes de usuário quando muda de tela
             if (usuarioLogado) {
                 atualizarNomesUsuarioEmTodasTelas();
             }
             
-            // Se voltar para o menu principal, fecha os submenus
+            // Se voltar para o menu principal, fecha os submenus e limpa histórico
             if (screenId === 'screenMenuPrincipal') {
                 fecharSubmenus();
+                historicoNavegacao = []; // Limpa histórico quando volta ao menu principal
+            }
+            
+            // Se voltar para login, limpa histórico
+            if (screenId === 'screenInicio') {
+                historicoNavegacao = [];
+                telaAtual = null;
             }
         }
+        
+        // Função para voltar à página anterior
+        function voltar() {
+            if (historicoNavegacao.length > 0) {
+                // Remove a última tela do histórico (é a tela atual)
+                const telaAnterior = historicoNavegacao.pop();
+                // Mostra a tela anterior sem adicionar ao histórico
+                mostrarTela(telaAnterior, true);
+            } else {
+                // Se não houver histórico, volta para o menu principal
+                mostrarTela('screenMenuPrincipal', true);
+            }
+        }
+        
+        // Expor função globalmente
+        window.voltar = voltar;
         
         function irParaConferenciaCaixa() {
             mostrarTela('screenConferenciaCaixa');
@@ -4291,12 +4401,12 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             }
             
             try {
-                // Upload da foto
+                // Upload da foto (usando bucket único)
                 const timestamp = new Date().getTime();
-                const nomeArquivo = `produto_${codigoBarras}_${timestamp}.jpeg`;
+                const nomeArquivo = `produtos-sem-cadastro/produto_${codigoBarras}_${timestamp}.jpeg`;
                 
                 const { error: uploadError } = await window.supabaseClient.storage
-                    .from(SUPABASE_STORAGE_PRODUTOS_SEM_CADASTRO)
+                    .from(SUPABASE_STORAGE_BUCKET)
                     .upload(nomeArquivo, fotoFile, {
                         cacheControl: '3600',
                         contentType: 'image/jpeg',
@@ -4306,7 +4416,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 if (uploadError) throw uploadError;
                 
                 const { data: publicData } = window.supabaseClient.storage
-                    .from(SUPABASE_STORAGE_PRODUTOS_SEM_CADASTRO)
+                    .from(SUPABASE_STORAGE_BUCKET)
                     .getPublicUrl(nomeArquivo);
                 
                 // Busca ou cria usuário colaborador
@@ -4344,7 +4454,20 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 
             } catch (error) {
                 console.error('Erro ao salvar produto sem cadastro:', error);
-                showMessageBox('❌ Erro', `Erro ao enviar produto: ${error.message}`);
+                
+                // Mensagem de erro mais específica para bucket não encontrado
+                let mensagemErro = `Erro ao enviar produto: ${error.message}`;
+                if (error.message && error.message.includes('Bucket not found')) {
+                    mensagemErro = `❌ Erro: Bucket '${SUPABASE_STORAGE_BUCKET}' não encontrado no Supabase.\n\n` +
+                        `Por favor, crie o bucket manualmente no Supabase Dashboard:\n` +
+                        `1. Vá em Storage no Supabase\n` +
+                        `2. Crie um novo bucket chamado: ${SUPABASE_STORAGE_BUCKET}\n` +
+                        `3. Configure como Público\n` +
+                        `4. Defina limite de 5MB\n` +
+                        `5. Tente novamente`;
+                }
+                
+                showMessageBox('❌ Erro', mensagemErro);
             }
         }
         
@@ -4532,9 +4655,9 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                                 ${statusLabel}
                             </span>
                         </div>
-                        ${t.foto_url ? `
+                        ${t.codigo_barras ? `
                             <div class="entrega-info" style="margin-top: 10px;">
-                                <img src="${t.foto_url}" alt="Foto do produto" style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 2px solid var(--border-color);">
+                                <strong>📊 Código de Barras:</strong> ${t.codigo_barras}
                             </div>
                         ` : ''}
                         <div class="entrega-info">
@@ -4574,13 +4697,13 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 return;
             }
             
-            const fotoFile = document.getElementById('trocaFoto')?.files[0];
+            const codigoBarras = document.getElementById('trocaCodigoBarras')?.value.trim();
             const nomeProduto = document.getElementById('trocaNomeProduto')?.value.trim();
             const quantidade = parseFloat(document.getElementById('trocaQuantidade')?.value);
             const motivo = document.getElementById('trocaMotivo')?.value;
             const observacoes = document.getElementById('trocaObservacoes')?.value.trim();
             
-            if (!fotoFile || !nomeProduto || !quantidade || !motivo) {
+            if (!codigoBarras || !nomeProduto || !quantidade || !motivo) {
                 showMessageBox('⚠️ Erro', 'Preencha todos os campos obrigatórios!');
                 return;
             }
@@ -4591,33 +4714,15 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             }
             
             try {
-                // Upload da foto
-                const timestamp = new Date().getTime();
-                const nomeArquivo = `troca_${nomeProduto.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.jpeg`;
-                
-                const { error: uploadError } = await window.supabaseClient.storage
-                    .from(SUPABASE_STORAGE_TROCAS)
-                    .upload(nomeArquivo, fotoFile, {
-                        cacheControl: '3600',
-                        contentType: 'image/jpeg',
-                        upsert: true
-                    });
-                
-                if (uploadError) throw uploadError;
-                
-                const { data: publicData } = window.supabaseClient.storage
-                    .from(SUPABASE_STORAGE_TROCAS)
-                    .getPublicUrl(nomeArquivo);
-                
                 // Busca ou cria usuário colaborador
                 let colaboradorId = await obterOuCriarUsuario(usuarioLogado);
                 
-                // Insere no banco
+                // Insere no banco (sem foto_url, usando codigo_barras)
                 const { data, error } = await window.supabaseClient
                     .from(SUPABASE_TABLE_TROCAS)
                     .insert([{
                         nome_produto: nomeProduto,
-                        foto_url: publicData.publicUrl,
+                        codigo_barras: codigoBarras,
                         quantidade: quantidade,
                         motivo: motivo,
                         status: 'pendente',
@@ -4632,6 +4737,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 // Registra LOG
                 registrarLog(`Troca solicitada: ${nomeProduto}`, 'criar', 'troca', data[0].id, {
                     nome_produto: nomeProduto,
+                    codigo_barras: codigoBarras,
                     quantidade: quantidade,
                     motivo: motivo
                 });
@@ -4754,7 +4860,8 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         // Limpa formulário
         function limparFormularioTroca() {
             document.getElementById('formNovaTroca')?.reset();
-            document.getElementById('previewFotoTroca').style.display = 'none';
+            const previewDiv = document.getElementById('previewFotoTroca');
+            if (previewDiv) previewDiv.style.display = 'none';
         }
         
         // =====================================================
@@ -5088,10 +5195,10 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         window.reprovarProdutoSemCadastro = reprovarProdutoSemCadastro;
         window.previewFotoProdutoSemCadastro = previewFotoProdutoSemCadastro;
         window.limparFormularioProdutoSemCadastro = limparFormularioProdutoSemCadastro;
+        window.previewFotoTroca = previewFotoTroca;
         window.processarTroca = processarTroca;
         window.concluirTroca = concluirTroca;
         window.cancelarTroca = cancelarTroca;
-        window.previewFotoTroca = previewFotoTroca;
         window.limparFormularioTroca = limparFormularioTroca;
         window.atualizarStatusProdutoFalta = atualizarStatusProdutoFalta;
         window.abrirModalNaoComprar = abrirModalNaoComprar;
@@ -6393,20 +6500,27 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             width: 100%;
             transition: all 0.3s ease;
         }
+        /* Header - Design Profissional */
         .header {
-            background: var(--bg-primary);
-            color: var(--text-inverse);
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
             padding: 30px 20px;
             text-align: center;
             position: relative;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
         .header h1 {
-            font-size: 24px;
+            font-size: 26px;
+            font-weight: 700;
             margin-bottom: 5px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            letter-spacing: 0.5px;
         }
         .header p {
             font-size: 14px;
-            opacity: 0.9;
+            opacity: 0.95;
+            font-weight: 500;
+            letter-spacing: 0.3px;
         }
         .logout-btn {
             position: absolute;
@@ -6531,21 +6645,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(61, 75, 122, 0.4);
         }
-        .btn-voltar {
-            background: var(--button-bg);
-            color: var(--text-inverse);
-            border: none;
-            padding: 12px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: bold;
-            width: 100%;
-            margin-top: 10px;
-            transition: all 0.3s ease;
-        }
-        .btn-voltar:hover {
-            background: var(--button-hover);
-        }
+        /* Botão voltar antigo removido - agora usa o novo design */
         .role-btn {
             background: var(--card-bg);
             border: 3px solid var(--button-bg);
@@ -7586,12 +7686,28 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             }
         }
         
+        /* Submenu grid padrão (para outros lugares) */
         .submenu-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 15px;
             padding: 10px;
             margin-bottom: 20px;
+        }
+        
+        /* Submenu grid com 3 ou 4 colunas quando necessário */
+        .submenu-grid.cols-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        .submenu-grid.cols-4 {
+            grid-template-columns: repeat(4, 1fr);
+        }
+        
+        @media (max-width: 768px) {
+            .submenu-grid {
+                grid-template-columns: 1fr;
+            }
         }
         
         @media (max-width: 480px) {
@@ -7931,44 +8047,100 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             }
         }
         
-        /* Cores específicas para cada card */
+        /* Cores específicas para cada card - Design Profissional */
         .menu-card:nth-child(1) {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
         }
         
         .menu-card:nth-child(2) {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            background: linear-gradient(135deg, #4CAF50 0%, #388E3C 100%);
         }
         
         .menu-card:nth-child(3) {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
         }
         
         .menu-card:nth-child(4) {
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
         }
         
         .menu-card:nth-child(5) {
-            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            background: linear-gradient(135deg, #00BCD4 0%, #0097A7 100%);
         }
         
         /* Card de Gestão com cor especial */
         #menuCardGestao {
-            background: linear-gradient(135deg, #d63031 0%, #c0392b 100%) !important;
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%) !important;
         }
         
-        /* Melhorias nos submenus */
+        /* Layout do submenu com duas colunas - Design Profissional */
+        .submenu-grid-layout {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+            align-items: start;
+        }
+        
+        .submenu-col-left {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        
+        .submenu-col-right {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: stretch;
+        }
+        
+        /* Quando não há coluna direita visível, a esquerda ocupa toda a largura */
+        .submenu-col-right:empty {
+            display: none;
+        }
+        
+        .submenu-col-left:empty {
+            display: none;
+        }
+        
+        /* Quando a direita está vazia, a esquerda ocupa toda a largura */
+        .submenu-grid-layout:has(.submenu-col-right:empty) .submenu-col-left {
+            grid-column: 1 / -1;
+        }
+        
+        /* Caso especial: quando só tem coluna direita (entregador sozinho) */
+        .submenu-grid-layout:has(.submenu-col-left:empty) .submenu-col-right {
+            grid-column: 1 / -1;
+        }
+        
+        @media (max-width: 768px) {
+            .submenu-grid-layout {
+                grid-template-columns: 1fr;
+            }
+            
+            .submenu-col-left {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Melhorias nos submenus - Design Profissional */
         .submenu-card {
-            background: var(--card-bg);
-            border: 2px solid var(--border-color);
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border: 2px solid #e0e0e0;
             border-radius: 16px;
-            padding: 20px;
+            padding: 24px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
             position: relative;
             overflow: hidden;
+            min-height: 140px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
         
         .submenu-card::before {
@@ -7978,15 +8150,16 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
             left: 0;
             right: 0;
             bottom: 0;
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            background: linear-gradient(135deg, rgba(33, 150, 243, 0.05) 0%, rgba(76, 175, 80, 0.05) 100%);
             opacity: 0;
             transition: opacity 0.3s ease;
         }
         
         .submenu-card:hover {
-            transform: translateY(-4px);
+            transform: translateY(-6px);
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-            border-color: var(--button-bg);
+            border-color: #2196F3;
+            background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
         }
         
         .submenu-card:hover::before {
@@ -7994,23 +8167,67 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         }
         
         .submenu-card-icon {
-            font-size: 40px;
-            margin-bottom: 10px;
+            font-size: 48px;
+            margin-bottom: 12px;
             transition: transform 0.3s ease;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
         }
         
         .submenu-card:hover .submenu-card-icon {
-            transform: scale(1.15);
+            transform: scale(1.2) rotate(5deg);
         }
         
         .submenu-card-text {
-            color: var(--text-primary);
-            font-size: 13px;
-            font-weight: 600;
+            color: #2c3e50;
+            font-size: 14px;
+            font-weight: 700;
             text-align: center;
-            line-height: 1.3;
+            line-height: 1.4;
             position: relative;
             z-index: 1;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Cores específicas para cada card */
+        .submenu-card:nth-child(1) {
+            border-left: 4px solid #2196F3;
+        }
+        .submenu-card:nth-child(1):hover {
+            border-left-color: #1976D2;
+            background: linear-gradient(135deg, #ffffff 0%, #e3f2fd 100%);
+        }
+        
+        .submenu-card:nth-child(2) {
+            border-left: 4px solid #4CAF50;
+        }
+        .submenu-card:nth-child(2):hover {
+            border-left-color: #388E3C;
+            background: linear-gradient(135deg, #ffffff 0%, #e8f5e9 100%);
+        }
+        
+        .submenu-card:nth-child(3) {
+            border-left: 4px solid #FF9800;
+        }
+        .submenu-card:nth-child(3):hover {
+            border-left-color: #F57C00;
+            background: linear-gradient(135deg, #ffffff 0%, #fff3e0 100%);
+        }
+        
+        .submenu-card:nth-child(4) {
+            border-left: 4px solid #9C27B0;
+        }
+        .submenu-card:nth-child(4):hover {
+            border-left-color: #7B1FA2;
+            background: linear-gradient(135deg, #ffffff 0%, #f3e5f5 100%);
+        }
+        
+        .submenu-card:nth-child(5) {
+            border-left: 4px solid #00BCD4;
+        }
+        .submenu-card:nth-child(5):hover {
+            border-left-color: #0097A7;
+            background: linear-gradient(135deg, #ffffff 0%, #e0f7fa 100%);
         }
         
         @media (max-width: 480px) {
@@ -8028,6 +8245,252 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                 font-size: 11px;
             }
         }
+        
+        /* ============================================
+           MELHORIAS DE LAYOUT E DESIGN
+           ============================================ */
+        
+        /* Botão Voltar - Design Profissional */
+        .btn-voltar {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            margin-top: 20px;
+            box-shadow: 0 4px 12px rgba(44, 62, 80, 0.25);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-voltar::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        .btn-voltar:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(44, 62, 80, 0.35);
+            background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+        }
+        .btn-voltar:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+        .btn-voltar:active {
+            transform: translateY(0);
+        }
+        
+        /* Botão Voltar Submenu */
+        .btn-voltar-submenu {
+            background: linear-gradient(135deg, #546e7a 0%, #455a64 100%);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 15px;
+            box-shadow: 0 4px 12px rgba(84, 110, 122, 0.25);
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-voltar-submenu:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(84, 110, 122, 0.35);
+            background: linear-gradient(135deg, #455a64 0%, #546e7a 100%);
+        }
+        
+        /* Animação de entrada nas telas */
+        .screen {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Melhorias nos cards de entrega */
+        .entrega-card {
+            background: var(--card-bg);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+        }
+        
+        .entrega-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+            border-color: var(--button-bg);
+        }
+        
+        /* Melhorias nos formulários */
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+        
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 10px;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            background: var(--card-bg);
+            color: var(--text-primary);
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #2196F3;
+            box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+        }
+        
+        /* Melhorias nos botões primários - Design Profissional */
+        .btn-primary {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            color: white;
+            padding: 14px 28px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4);
+            background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+        }
+        
+        .btn-primary:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+        
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        
+        /* Melhorias nos títulos - Design Profissional */
+        .screen h2 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #2c3e50;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            padding-bottom: 15px;
+        }
+        
+        .screen h2::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 4px;
+            background: linear-gradient(135deg, #2196F3 0%, #4CAF50 100%);
+            border-radius: 2px;
+        }
+        
+        /* Melhorias nos status badges */
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Melhorias nas estatísticas */
+        .stat-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        }
+        
+        .stat-number {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
 <body>
@@ -8035,8 +8498,8 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
         <div class="header">
             <button class="dark-mode-toggle" id="darkModeToggle" onclick="toggleDarkMode()">🌙</button>
             <button class="logout-btn" id="logoutBtn" onclick="logout()" style="display:none;">🚪 Sair</button>
-            <h1>🚚 Entregas Rio Branco</h1>
-            <p>Sistema de Gestão de Entregas</p>
+            <h1>🤖 Operating System RB</h1>
+            <p>Sistema operacional rio branco</p>
         </div>
 
         <div class="content">
@@ -8107,68 +8570,91 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                     <!-- SUBMENU ENTREGAS (oculto por padrão) -->
                     <div id="submenuEntregas" class="submenu-container" style="display: none;">
                         <h3 style="text-align: center; margin: 20px 0 15px; color: var(--text-primary);">🚚 ENTREGAS</h3>
-                        <div class="submenu-grid">
-                            <!-- Opções para CAIXA/ATENDENTE -->
-                            <div id="submenuOpcoesCaixa" style="display: none;">
-                                <div class="submenu-card" onclick="mostrarTela('screenCriarEntrega'); atualizarTaxasCriacao(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">📦</div>
-                                    <div class="submenu-card-text">Criar Entrega</div>
+                        
+                        <!-- Opções para CAIXA/ATENDENTE -->
+                        <div id="submenuOpcoesCaixa" style="display: none;">
+                            <div class="submenu-grid-layout">
+                                <div class="submenu-col-left">
+                                    <div class="submenu-card" onclick="mostrarTela('screenCriarEntrega'); atualizarTaxasCriacao(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">📦</div>
+                                        <div class="submenu-card-text">Criar Entrega</div>
+                                    </div>
+                                    <div class="submenu-card" onclick="mostrarTela('screenSeparacao'); carregarPedidosSeparacao(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">🛒</div>
+                                        <div class="submenu-card-text">Separação Itens</div>
+                                    </div>
+                                    <div class="submenu-card" onclick="mostrarTela('screenFinalizarEntregas'); carregarPedidosParaFinalizar(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">🧾</div>
+                                        <div class="submenu-card-text">Finalizar Entrega</div>
+                                    </div>
+                                    <div class="submenu-card" onclick="irParaConferenciaCaixa(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">🔔</div>
+                                        <div class="submenu-card-text">Conferir Retorno</div>
+                                    </div>
                                 </div>
-                                <div class="submenu-card" onclick="mostrarTela('screenSeparacao'); carregarPedidosSeparacao(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">🛒</div>
-                                    <div class="submenu-card-text">Separação Itens</div>
-                                </div>
-                                <div class="submenu-card" onclick="mostrarTela('screenFinalizarEntregas'); carregarPedidosParaFinalizar(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">🧾</div>
-                                    <div class="submenu-card-text">Finalizar Entrega</div>
-                                </div>
-                                <div class="submenu-card" onclick="irParaConferenciaCaixa(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">🔔</div>
-                                    <div class="submenu-card-text">Conferir Retorno</div>
-                                </div>
-                                <!-- Opção de Entregador (aparece quando usuário tem ambas as permissões) -->
-                                <div id="opcaoEntregadorNoCaixa" class="submenu-card" style="display: none;" onclick="mostrarTela('screenEntregador'); carregarEntregasEntregador(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">🚴</div>
-                                    <div class="submenu-card-text">Minhas Entregas</div>
-                                </div>
-                            </div>
-                            
-                            <!-- Opções para SEPARADOR -->
-                            <div id="submenuOpcoesSeparador" style="display: none;">
-                                <div class="submenu-card" onclick="mostrarTela('screenSeparacao'); carregarPedidosSeparacao(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">🛒</div>
-                                    <div class="submenu-card-text">Separação de Itens</div>
-                                </div>
-                            </div>
-                            
-                            <!-- Opções para ENTREGADOR -->
-                            <div id="submenuOpcoesEntregador" style="display: none;">
-                                <div class="submenu-card" onclick="mostrarTela('screenEntregador'); carregarEntregasEntregador(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">🚴</div>
-                                    <div class="submenu-card-text">Minhas Entregas</div>
-                                </div>
-                            </div>
-                            
-                            <!-- Opções para GESTOR/FISCAL -->
-                            <div id="submenuOpcoesGestor" style="display: none;">
-                                <div class="submenu-card" onclick="mostrarTela('screenCriarEntrega'); atualizarTaxasCriacao(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">📦</div>
-                                    <div class="submenu-card-text">Criar Entrega</div>
-                                </div>
-                                <div class="submenu-card" onclick="mostrarTela('screenSeparacao'); carregarPedidosSeparacao(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">🛒</div>
-                                    <div class="submenu-card-text">Separação Itens</div>
-                                </div>
-                                <div class="submenu-card" onclick="mostrarTela('screenFinalizarEntregas'); carregarPedidosParaFinalizar(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">🧾</div>
-                                    <div class="submenu-card-text">Finalizar Entrega</div>
-                                </div>
-                                <div class="submenu-card" onclick="irParaConferenciaCaixa(); fecharSubmenus();">
-                                    <div class="submenu-card-icon">🔔</div>
-                                    <div class="submenu-card-text">Conferir Retorno</div>
+                                <div class="submenu-col-right">
+                                    <!-- Opção de Entregador (aparece quando usuário tem ambas as permissões) -->
+                                    <div id="opcaoEntregadorNoCaixa" style="display: none;">
+                                        <div class="submenu-card" onclick="mostrarTela('screenEntregador'); carregarEntregasEntregador(); fecharSubmenus();">
+                                            <div class="submenu-card-icon">🚴</div>
+                                            <div class="submenu-card-text">Minhas Entregas</div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        
+                        <!-- Opções para SEPARADOR -->
+                        <div id="submenuOpcoesSeparador" style="display: none;">
+                            <div class="submenu-grid-layout">
+                                <div class="submenu-col-left">
+                                    <div class="submenu-card" onclick="mostrarTela('screenSeparacao'); carregarPedidosSeparacao(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">🛒</div>
+                                        <div class="submenu-card-text">Separação de Itens</div>
+                                    </div>
+                                </div>
+                                <div class="submenu-col-right"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Opções para ENTREGADOR -->
+                        <div id="submenuOpcoesEntregador" style="display: none;">
+                            <div class="submenu-grid-layout">
+                                <div class="submenu-col-left"></div>
+                                <div class="submenu-col-right">
+                                    <div class="submenu-card" onclick="mostrarTela('screenEntregador'); carregarEntregasEntregador(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">🚴</div>
+                                        <div class="submenu-card-text">Minhas Entregas</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Opções para GESTOR/FISCAL -->
+                        <div id="submenuOpcoesGestor" style="display: none;">
+                            <div class="submenu-grid-layout">
+                                <div class="submenu-col-left">
+                                    <div class="submenu-card" onclick="mostrarTela('screenCriarEntrega'); atualizarTaxasCriacao(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">📦</div>
+                                        <div class="submenu-card-text">Criar Entrega</div>
+                                    </div>
+                                    <div class="submenu-card" onclick="mostrarTela('screenSeparacao'); carregarPedidosSeparacao(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">🛒</div>
+                                        <div class="submenu-card-text">Separação Itens</div>
+                                    </div>
+                                    <div class="submenu-card" onclick="mostrarTela('screenFinalizarEntregas'); carregarPedidosParaFinalizar(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">🧾</div>
+                                        <div class="submenu-card-text">Finalizar Entrega</div>
+                                    </div>
+                                    <div class="submenu-card" onclick="irParaConferenciaCaixa(); fecharSubmenus();">
+                                        <div class="submenu-card-icon">🔔</div>
+                                        <div class="submenu-card-text">Conferir Retorno</div>
+                                    </div>
+                                </div>
+                                <div class="submenu-col-right"></div>
+                            </div>
+                        </div>
+                        
                         <button class="btn-voltar-submenu" onclick="fecharSubmenus()">← Voltar</button>
                     </div>
                     
@@ -8313,7 +8799,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                     <button class="btn-primary" style="background: #ffc107; color: #333;" onclick="irParaConferenciaCaixa()">
                         🔔 Conferir Retorno de Entregas
                     </button>
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
                 
                 <div id="screenConferenciaCaixa" class="screen">
@@ -8324,7 +8810,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                      <div id="listaEntregasConferencia">
                          </div>
                      
-                     <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 10px;">← Voltar</button>
+                     <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <div id="screenFinalizarEntregas" class="screen">
@@ -8349,7 +8835,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
                     
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <div id="screenEntregador" class="screen">
@@ -8373,7 +8859,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                     <h3>✅ Histórico de Entregas Hoje</h3>
                     <div id="listaEntregasEntregues"></div>
 
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <div id="screenFiscal" class="screen">
@@ -8435,7 +8921,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                     <h3>Todas as Entregas no Período</h3>
                     <div id="listaTodasEntregas"></div>
 
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
                 
                 <div id="screenPerformance" class="screen">
@@ -8532,7 +9018,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         <div id="performanceCaixaChart"></div>
                     </div>
                     
-                    <button class="btn-voltar" onclick="mostrarTela('screenGestaoCompleta'); carregarGestaoCompleta();" style="margin-top: 20px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
                 
                 <div id="screenAdmin" class="screen">
@@ -8589,7 +9075,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                     </div>
                     <button class="btn-primary" onclick="adicionarEntregador()">Adicionar</button>
 
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
                 
                 <!-- TELA DE SEPARAÇÃO DE ITENS -->
@@ -8617,7 +9103,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
                     
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- NOVA TELA: CLIENTES & FIDELIDADE -->
@@ -8663,7 +9149,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
                     
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- TELA COMPLETA DE GESTÃO (APENAS PARA GESTORES) -->
@@ -8776,7 +9262,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
                     
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 20px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- ===== TELA DE LOG ===== -->
@@ -8848,7 +9334,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
                     
-                    <button class="btn-voltar" onclick="mostrarTela('screenGestaoCompleta'); carregarGestaoCompleta();" style="margin-top: 20px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- ===== TELA DE CONFIGURAÇÃO DE PERMISSÕES ===== -->
@@ -8937,7 +9423,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
                     
-                    <button class="btn-voltar" onclick="mostrarTela('screenGestaoCompleta'); carregarGestaoCompleta();" style="margin-top: 20px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- ===== SISTEMA DE GESTÃO DE VALIDADES ===== -->
@@ -8993,7 +9479,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
 
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 20px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- TELA DE CADASTRO DE PRODUTOS -->
@@ -9037,7 +9523,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         <button type="submit" class="btn-primary">📤 Cadastrar Produto</button>
                     </form>
 
-                    <button class="btn-voltar" onclick="mostrarTela('screenValidades'); carregarValidades();" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- TELA DE TROCAS -->
@@ -9093,7 +9579,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
 
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 20px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
                 
                 <!-- TELA DE NOVA TROCA -->
@@ -9104,6 +9590,11 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                     </p>
                     
                     <form id="formNovaTroca" onsubmit="salvarTroca(event)">
+                        <div class="form-group">
+                            <label>Código de Barras *</label>
+                            <input type="text" id="trocaCodigoBarras" required placeholder="Ex: 7891234567890">
+                        </div>
+                        
                         <div class="form-group">
                             <label>Nome do Produto *</label>
                             <input type="text" id="trocaNomeProduto" required placeholder="Ex: Leite Italac 1L">
@@ -9125,8 +9616,8 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                         
                         <div class="form-group">
-                            <label>Foto do Produto *</label>
-                            <input type="file" id="trocaFoto" accept="image/*" capture="environment" required onchange="previewFotoTroca(event)">
+                            <label>Foto do Produto (opcional)</label>
+                            <input type="file" id="trocaFoto" accept="image/*" capture="environment" onchange="previewFotoTroca(event)">
                             <div id="previewFotoTroca" style="margin-top: 10px; display: none;">
                                 <img id="imgPreviewTroca" src="" alt="Preview" style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 2px solid var(--border-color);">
                             </div>
@@ -9142,7 +9633,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </button>
                     </form>
                     
-                    <button class="btn-voltar" onclick="mostrarTela('screenTrocas'); carregarTrocas();" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- TELA DE PRODUTOS FALTA -->
@@ -9202,7 +9693,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
 
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 20px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
                 
                 <!-- TELA DE NOVA SOLICITAÇÃO DE PRODUTOS FALTA -->
@@ -9253,7 +9744,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </button>
                     </form>
                     
-                    <button class="btn-voltar" onclick="mostrarTela('screenProdutosFalta'); carregarProdutosFalta();" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- TELA DE PRODUTOS SEM CADASTRO -->
@@ -9312,7 +9803,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </div>
                     </div>
 
-                    <button class="btn-voltar" onclick="voltarMenuPrincipal()" style="margin-top: 20px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
                 
                 <!-- TELA DE NOVO PRODUTO SEM CADASTRO -->
@@ -9349,7 +9840,7 @@ CREATE POLICY "Permitir inserção pública" ON logs_sistema
                         </button>
                     </form>
                     
-                    <button class="btn-voltar" onclick="mostrarTela('screenProdutosSemCadastro'); carregarProdutosSemCadastro();" style="margin-top: 10px;">← Voltar</button>
+                    <button class="btn-voltar" onclick="voltar()">← Voltar</button>
                 </div>
 
                 <!-- TELA DE PRECIFICAÇÃO -->
