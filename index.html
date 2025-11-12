@@ -575,7 +575,41 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
         let acaoCancelamentoTipo = null; 
         let conferenciaProblemaDocId = null;
         
-       
+        // --- DADOS DE USUÁRIO (Ainda no LocalStorage/Memória para facilitar login) ---
+        // Mapeamento de nomes: Carlos = Carlos Santos, Cadu = Carlos Mello, Junior = Ciro Rogerio
+        let GESTORES = { 
+            'Cadu': { senha: '0000', apelido: 'Carlos' }, 
+            'Carlos': { senha: '5875', apelido: 'Cadu' }, 
+            'Marilu Silva': { senha: '0000', apelido: 'Marilu' }, 
+            'Ciro Rogerio': { senha: '0000', apelido: 'Junior' } 
+        };
+        let ENTREGADORES = { 
+            'Cadu': { senha: '0000', telefone: '66996005936', pontos: 100, historicoPontos: [], apelido: 'Carlos' }, 
+            'Carlos': { senha: '5875', telefone: '66996005936', pontos: 100, historicoPontos: [], apelido: 'Cadu' }, 
+            'Jonatan Piva': { senha: '1234', telefone: '66988888888', pontos: 0, historicoPontos: [], apelido: 'Jonatan' } 
+        };
+        let ATENDENTES = { 
+            'Cadu': { senha: '0000', apelido: 'Carlos' }, 
+            'Carlos': { senha: '5875', apelido: 'Cadu' }, 
+            'Marilu Silva': { senha: '0000', apelido: 'Marilu' }, 
+            'Ciro Rogerio': { senha: '0000', apelido: 'Junior' }, 
+            'Kátia': { senha: '0000' }, 
+            'Maria Eduarda': { senha: '0000' }, 
+            'Hugo Aguiar': { senha: '0000' }, 
+            'Andre Lopes': { senha: '0000' } 
+        };
+        
+        // Separadores de pedidos
+        let SEPARADORES = { 
+            'Cadu': { senha: '0000', apelido: 'Carlos' }, 
+            'Carlos': { senha: '5875', apelido: 'Cadu' }, 
+            'Marilu Silva': { senha: '0000', apelido: 'Marilu' }, 
+            'Ciro Rogerio': { senha: '0000', apelido: 'Junior' }, 
+            'Kátia': { senha: '0000' }, 
+            'Maria Eduarda': { senha: '0000' }, 
+            'Hugo Aguiar': { senha: '0000' }, 
+            'Andre Lopes': { senha: '0000' }, 
+            'Jonatan Piva': { senha: '1234', apelido: 'Jonatan' } 
         };
         
         // --- SISTEMA DE PERMISSÕES ---
