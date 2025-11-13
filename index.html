@@ -10563,6 +10563,17 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
             width: 100%;
             transition: all 0.3s ease;
         }
+        
+        @media (max-width: 480px) {
+            .container {
+                border-radius: 15px;
+                margin-bottom: 10px;
+            }
+            
+            body {
+                padding: 5px;
+            }
+        }
         /* Header - Design Profissional */
         .header {
             background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
@@ -10572,6 +10583,12 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
             position: relative;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
+        
+        [data-theme="dark"] .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        
         .header h1 {
             font-size: 26px;
             font-weight: 700;
@@ -10579,11 +10596,32 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
             letter-spacing: 0.5px;
         }
+        
         .header p {
             font-size: 14px;
             opacity: 0.95;
             font-weight: 500;
             letter-spacing: 0.3px;
+        }
+        
+        @media (max-width: 480px) {
+            .header {
+                padding: 20px 15px;
+            }
+            
+            .header h1 {
+                font-size: 20px;
+            }
+            
+            .header p {
+                font-size: 12px;
+            }
+            
+            .logout-btn,
+            .dark-mode-toggle {
+                padding: 6px 12px;
+                font-size: 11px;
+            }
         }
         .logout-btn {
             position: absolute;
@@ -10617,6 +10655,12 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
         }
         .content {
             padding: 20px;
+        }
+        
+        @media (max-width: 480px) {
+            .content {
+                padding: 15px;
+            }
         }
         .screen {
             display: none;
@@ -11636,6 +11680,13 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
             border-radius: 20px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
             border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+        
+        [data-theme="dark"] .menu-header {
+            background: #2d3748;
+            border-color: #4a5568;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         }
         
         .menu-header h2 {
@@ -11646,10 +11697,33 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
             letter-spacing: -0.5px;
         }
         
+        [data-theme="dark"] .menu-header h2 {
+            color: #ffffff !important;
+        }
+        
         .menu-header p {
             margin: 0;
             color: var(--text-secondary);
             font-size: 14px;
+        }
+        
+        [data-theme="dark"] .menu-header p {
+            color: #e2e8f0 !important;
+        }
+        
+        @media (max-width: 480px) {
+            .menu-header {
+                padding: 15px;
+                margin-bottom: 30px;
+            }
+            
+            .menu-header h2 {
+                font-size: 22px;
+            }
+            
+            .menu-header p {
+                font-size: 12px;
+            }
         }
         
         .menu-grid {
@@ -12250,6 +12324,41 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
             z-index: 1;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+        }
+        
+        /* Estilos para modo dark nos submenu-cards */
+        [data-theme="dark"] .submenu-card {
+            background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+            border-color: #4a5568;
+        }
+        
+        [data-theme="dark"] .submenu-card:hover {
+            background: linear-gradient(135deg, #374151 0%, #2d3748 100%);
+            border-color: #2196F3;
+        }
+        
+        [data-theme="dark"] .submenu-card-text {
+            color: #ffffff !important;
+        }
+        
+        [data-theme="dark"] .submenu-card:nth-child(1):hover {
+            background: linear-gradient(135deg, #374151 0%, #2d3748 100%);
+        }
+        
+        [data-theme="dark"] .submenu-card:nth-child(2):hover {
+            background: linear-gradient(135deg, #374151 0%, #2d3748 100%);
+        }
+        
+        [data-theme="dark"] .submenu-card:nth-child(3):hover {
+            background: linear-gradient(135deg, #374151 0%, #2d3748 100%);
+        }
+        
+        [data-theme="dark"] .submenu-card:nth-child(4):hover {
+            background: linear-gradient(135deg, #374151 0%, #2d3748 100%);
+        }
+        
+        [data-theme="dark"] .submenu-card:nth-child(5):hover {
+            background: linear-gradient(135deg, #374151 0%, #2d3748 100%);
         }
         
         /* Cores específicas para cada card */
