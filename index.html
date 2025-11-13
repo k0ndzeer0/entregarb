@@ -3688,7 +3688,7 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
             mostrarTela('screenMenuPrincipal');
         }
 
-        // FUNÇÃO DE LOGIN UNIFICADA - IDENTIFICA AUTOMATICAMENTE O TIPO DE USUÁRIO
+        // FUNÇÃO DE LOGIN UNIFICADA CORRIGIDA - Permite login apenas com primeiro nome
         function fazerLoginUnificado(event) {
             if (event) event.preventDefault();
             
@@ -3700,50 +3700,175 @@ DROP POLICY IF EXISTS "Permitir atualização pública para usuarios" ON usuario
                 return;
             }
             
-            // Busca o usuário em TODOS os grupos (CASE-INSENSITIVE)
-            let usuarioEncontrado = null;
-            let tipoUsuarioEncontrado = null;
-            let nomeOriginal = null;
+            const nomeLower = nome.toLowerCase().trim();
+            const primeiroNome = nomeLower.split(' ')[0];
             
-            // Função auxiliar para buscar usuário case-insensitive
-            function buscarUsuarioCaseInsensitive(grupo, nomeBusca) {
-                const nomeBuscaLower = nomeBusca.toLowerCase();
-                for (const key in grupo) {
-                    if (key.toLowerCase() === nomeBuscaLower) {
-                        return key; // Retorna o nome original (com maiúsculas/minúsculas corretas)
+            // Mapeamento de apelidos para nomes completos
+            const mapeamento = {
+                'cadu': 'Carlos Santos',
+                'carlos santos': 'Carlos Santos',
+                'maria eduarda': 'Maria Eduarda',
+                'maria': 'Maria Eduarda',
+                'duda': 'Maria Eduarda',
+                'ciro': 'Ciro Rogerio',
+                'junior': 'Ciro Rogerio',
+                'ciro rogerio': 'Ciro Rogerio',
+                'marilu': 'Marilu Silva',
+                'marilu silva': 'Marilu Silva',
+                'hugo': 'Hugo Aguiar',
+                'hugo aguiar': 'Hugo Aguiar',
+                'katia': 'Kátia',
+                'kátia': 'Kátia',
+                'andre': 'Andre Lopes',
+                'andre lopes': 'Andre Lopes',
+                'jonatan': 'Jonatan Piva',
+                'jonatan piva': 'Jonatan Piva'
+            };
+            
+            let nomeFinal = mapeamento[nomeLower];
+            
+            // Se não encontrou mapeamento direto, busca por primeiro nome
+            if (!nomeFinal) {
+                let candidatos = [];
+                
+                // Função para buscar por primeiro nome em um grupo
+                function buscarPrimeiroNome(grupo) {
+                    for (const key in grupo) {
+                        const primeiroNomeKey = key.split(' ')[0].toLowerCase();
+                        if (primeiroNomeKey === primeiroNome) {
+                            candidatos.push({ 
+                                nome: key, 
+                                grupo: grupo, 
+                                senha: grupo[key].senha 
+                            });
+                        }
                     }
                 }
-                return null;
+                
+                // Busca em todos os grupos
+                buscarPrimeiroNome(GESTORES);
+                buscarPrimeiroNome(ENTREGADORES);
+                buscarPrimeiroNome(ATENDENTES);
+                buscarPrimeiroNome(SEPARADORES);
+                
+                // Se encontrou apenas um candidato, usa ele
+                if (candidatos.length === 1) {
+                    nomeFinal = candidatos[0].nome;
+                } 
+                // Se encontrou múltiplos candidatos
+                else if (candidatos.length > 1) {
+                    // CASO ESPECIAL: Dois "Carlos" - verifica a senha ANTES de mostrar erro
+                    if (primeiroNome === 'carlos') {
+                        const senhaStr = String(senha);
+                        
+                        // Busca Carlos Santos (senha 0000)
+                        const carlosSantos = candidatos.find(c => 
+                            c.nome === 'Carlos Santos' || c.nome.toLowerCase().includes('carlos santos')
+                        );
+                        
+                        // Busca Carlos (não é Carlos Santos) - pode ser "Carlos", "Carlos Mello", etc.
+                        // Procura por qualquer candidato que NÃO seja "Carlos Santos" e tenha senha 5875
+                        const carlos = candidatos.find(c => {
+                            const nomeLower = c.nome.toLowerCase();
+                            return nomeLower !== 'carlos santos' && 
+                                   nomeLower.startsWith('carlos') &&
+                                   String(c.senha) === senhaStr;
+                        });
+                        
+                        // Se não encontrou pelo nome exato, tenta pela senha
+                        const carlosPorSenha = candidatos.find(c => {
+                            const nomeLower = c.nome.toLowerCase();
+                            return nomeLower !== 'carlos santos' && 
+                                   nomeLower.startsWith('carlos') &&
+                                   String(c.senha) === '5875';
+                        });
+                        
+                        // Verifica Carlos Santos primeiro (senha 0000)
+                        if (carlosSantos && String(carlosSantos.senha) === senhaStr) {
+                            nomeFinal = carlosSantos.nome;
+                        } 
+                        // Depois verifica Carlos pela senha digitada
+                        else if (carlos) {
+                            nomeFinal = carlos.nome;
+                        }
+                        // Se a senha é 5875, tenta encontrar qualquer Carlos que não seja Santos
+                        else if (senhaStr === '5875' && carlosPorSenha) {
+                            nomeFinal = carlosPorSenha.nome;
+                        }
+                        // Se nenhuma senha corresponde, mostra erro
+                        else {
+                            showMessageBox('❌ Erro', 
+                                'Senha incorreta para "Carlos".\n\n' +
+                                '• Carlos Santos (Cadu) - senha: 0000\n' +
+                                '• Carlos Mello - senha: 5875'
+                            );
+                            return;
+                        }
+                    } 
+                    // Para outros nomes duplicados, verifica qual tem a senha correta
+                    else {
+                        const senhaStr = String(senha); // Converte para string para garantir comparação correta
+                        const encontrado = candidatos.find(c => String(c.senha) === senhaStr);
+                        if (encontrado) {
+                            nomeFinal = encontrado.nome;
+                        } else {
+                            const nomes = candidatos.map(c => c.nome).join(', ');
+                            showMessageBox('⚠️ Atenção', 
+                                `Múltiplos usuários encontrados: ${nomes}\n\n` +
+                                'Por favor, use o nome completo ou apelido.'
+                            );
+                            return;
+                        }
+                    }
+                } 
+                // Se não encontrou nenhum candidato, tenta busca exata
+                else {
+                    function buscarExato(grupo) {
+                        for (const key in grupo) {
+                            if (key.toLowerCase() === nomeLower) {
+                                return key;
+                            }
+                        }
+                        return null;
+                    }
+                    
+                    nomeFinal = buscarExato(GESTORES) || 
+                               buscarExato(ENTREGADORES) || 
+                               buscarExato(ATENDENTES) || 
+                               buscarExato(SEPARADORES);
+                }
             }
             
-            // Verifica em GESTORES (prioridade alta)
-            nomeOriginal = buscarUsuarioCaseInsensitive(GESTORES, nome);
-            if (nomeOriginal && GESTORES[nomeOriginal].senha === senha) {
-                usuarioEncontrado = nomeOriginal;
-                tipoUsuarioEncontrado = 'gestor';
+            // Se ainda não encontrou, retorna erro
+            if (!nomeFinal) {
+                showMessageBox('❌ Erro', 'Usuário não encontrado! Verifique o nome digitado.');
+                return;
             }
-            // Verifica em ENTREGADORES
-            else if (!usuarioEncontrado) {
-                nomeOriginal = buscarUsuarioCaseInsensitive(ENTREGADORES, nome);
-                if (nomeOriginal && ENTREGADORES[nomeOriginal].senha === senha) {
-                    usuarioEncontrado = nomeOriginal;
-                    tipoUsuarioEncontrado = 'entregador';
+            
+            // Agora busca o usuário e verifica a senha em TODOS os grupos
+            let usuarioEncontrado = null;
+            let tipoUsuarioEncontrado = null;
+            
+            function verificarLogin(grupo, tipo) {
+                const senhaStr = String(senha); // Converte para string para garantir comparação correta
+                for (const key in grupo) {
+                    if (key.toLowerCase() === nomeFinal.toLowerCase()) {
+                        if (String(grupo[key].senha) === senhaStr) {
+                            usuarioEncontrado = key;
+                            tipoUsuarioEncontrado = tipo;
+                            return true;
+                        }
+                    }
                 }
+                return false;
             }
-            // Verifica em ATENDENTES/CAIXA
-            if (!usuarioEncontrado) {
-                nomeOriginal = buscarUsuarioCaseInsensitive(ATENDENTES, nome);
-                if (nomeOriginal && ATENDENTES[nomeOriginal].senha === senha) {
-                    usuarioEncontrado = nomeOriginal;
-                    tipoUsuarioEncontrado = 'atendimento';
-                }
-            }
-            // Verifica em SEPARADORES
-            if (!usuarioEncontrado) {
-                nomeOriginal = buscarUsuarioCaseInsensitive(SEPARADORES, nome);
-                if (nomeOriginal && SEPARADORES[nomeOriginal].senha === senha) {
-                    usuarioEncontrado = nomeOriginal;
-                    tipoUsuarioEncontrado = 'separador';
+            
+            // Verifica em ordem de prioridade
+            if (!verificarLogin(GESTORES, 'gestor')) {
+                if (!verificarLogin(ENTREGADORES, 'entregador')) {
+                    if (!verificarLogin(ATENDENTES, 'atendimento')) {
+                        verificarLogin(SEPARADORES, 'separador');
+                    }
                 }
             }
             
